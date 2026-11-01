@@ -88,6 +88,36 @@ The new sources compile cleanly against Qt headers, and the patch applies cleanl
 at commit `330ef344`. The window itself still has to be tried in a full Windows build; see
 [BUILD-WINDOWS.md](BUILD-WINDOWS.md).
 
+## 7. Publishing to GitHub
+
+Everything was gathered into this repository, `s55oo/MP3e2_to_AetherSDR`:
+
+- the starter profile
+- the web mapper, made to open as a standalone page
+- the Visual Mapper patch with its sources
+- documentation, generated from the same layout data as the patch so the two agree
+
+The first push was refused, because Claude had no access to the repository. There were two
+ways forward:
+
+- **Push it yourself:** the repository was packed into a git bundle
+  (`MP3e2_to_AetherSDR.bundle`), with four commands to clone and push it.
+- **Give Claude access:** install the Claude GitHub App with access to this one repository
+  only.
+
+The second was chosen, and the push went through.
+
+To give Claude access to a repository in future:
+
+1. Signed in as the repository's owner, open
+   <https://github.com/apps/claude/installations/select_target>.
+2. Install the Claude app, choose **Only select repositories**, pick the repository and
+   save.
+3. If an earlier installation stops working, reconnect GitHub at
+   <https://claude.ai/customize/connectors>.
+
+How to keep this repository up to date is in [MAINTAINING.md](MAINTAINING.md).
+
 ## Next
 
 - **Test the Visual Mapper** on Windows with the MP3 e2 connected.

@@ -16,7 +16,7 @@ for AetherSDR and adds a way to set it up by clicking the controls on a picture.
 | [`profiles/`](profiles/) | A ready AetherSDR MIDI profile: VFO on the left jog wheel, receive on Deck A, transmit on Deck B. | Any current AetherSDR |
 | [`web-mapper/`](web-mapper/) | A page that runs in your browser: click a control, pick its AetherSDR function, copy the profile. | A web browser |
 | [`aethersdr-patch/`](aethersdr-patch/) | A **Visual Mapper** window built into AetherSDR itself: the same click-to-map picture, with changes applied live. | Building AetherSDR from source |
-| [`docs/`](docs/) | MIDI map, design notes, build guide and project log. | |
+| [`docs/`](docs/) | MIDI map, design notes, build guide, project log and maintenance guide. | |
 
 ## Quick start: use the profile
 
@@ -98,6 +98,10 @@ authors once it has been tested on real hardware.
 - **[AetherSDR](https://github.com/aethersdr/AetherSDR):** its MIDI layer does the real work.
 - **Building it:** S55OO, with Claude. The whole story is in
   [docs/PROJECT-LOG.md](docs/PROJECT-LOG.md).
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md). How to update the profile, the patch or add a controller: [docs/MAINTAINING.md](docs/MAINTAINING.md).
 
 ## License
 

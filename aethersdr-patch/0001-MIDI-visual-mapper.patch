@@ -1,0 +1,2866 @@
+From be3e301e564571a70b9f155d8784daa775b4f98c Mon Sep 17 00:00:00 2001
+From: Goran Andric <goran.andric@gmail.com>
+Date: Sun, 1 Nov 2026 15:21:20 +0100
+Subject: [PATCH] =?UTF-8?q?MIDI:=20visual=20mapper=20=E2=80=94=20bind=20co?=
+ =?UTF-8?q?ntrols=20by=20clicking=20a=20picture=20of=20the=20controller.?=
+ =?UTF-8?q?=20Principle=20VII.?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Adds a Visual Mapper window, opened from the MIDI Mapping dialog, that draws
+the controller from a JSON layout with each control's bound function above
+it. Click a control (or touch it on the hardware) and pick its function; the
+list offers only functions that control can drive. Edits go straight into
+the live bindings and midi.settings, so the table and picture stay in sync.
+
+- core: MidiControllerLayout parser with boundary validation
+- resources: Hercules DJControl MP3 e2 / MP3 LE / Glow layout
+- gui: MidiControllerCanvas, MidiVisualMapperDialog, Visual Mapper button
+- optional operator photo behind the drawing
+- test: midi_controller_layout_test
+- docs: "Using the visual mapper"
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FBP7mB64FKo2WyaAr8ZSRx
+---
+ CMakeLists.txt                                |   5 +-
+ docs/user/docs/midi-controller-mapping.md     |  17 +
+ .../hercules-djcontrol-mp3-e2.json            | 837 ++++++++++++++++++
+ resources/resources.qrc                       |   5 +
+ src/core/MidiControllerLayout.cpp             | 301 +++++++
+ src/core/MidiControllerLayout.h               | 103 +++
+ src/gui/MidiControllerCanvas.cpp              | 422 +++++++++
+ src/gui/MidiControllerCanvas.h                |  90 ++
+ src/gui/MidiMappingDialog.cpp                 |  26 +
+ src/gui/MidiMappingDialog.h                   |   5 +
+ src/gui/MidiVisualMapperDialog.cpp            | 652 ++++++++++++++
+ src/gui/MidiVisualMapperDialog.h              | 100 +++
+ tests/midi_controller_layout_test.cpp         |  77 ++
+ tests/tests.cmake                             |  10 +
+ 14 files changed, 2649 insertions(+), 1 deletion(-)
+ create mode 100644 resources/midi-layouts/hercules-djcontrol-mp3-e2.json
+ create mode 100644 src/core/MidiControllerLayout.cpp
+ create mode 100644 src/core/MidiControllerLayout.h
+ create mode 100644 src/gui/MidiControllerCanvas.cpp
+ create mode 100644 src/gui/MidiControllerCanvas.h
+ create mode 100644 src/gui/MidiVisualMapperDialog.cpp
+ create mode 100644 src/gui/MidiVisualMapperDialog.h
+ create mode 100644 tests/midi_controller_layout_test.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e6c8598..e990d46 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -2929,9 +2929,12 @@ message(STATUS "MIDI controller support enabled (RtMidi)")
+ target_compile_definitions(aethercore PUBLIC HAVE_MIDI) # gui MidiMappingDialog + MainWindow check it too
+ target_sources(aethercore PRIVATE
+     src/core/MidiControlManager.cpp
++    src/core/MidiControllerLayout.cpp
+     src/core/MidiSettings.cpp)
+ target_sources(AetherSDR PRIVATE
+-    src/gui/MidiMappingDialog.cpp)
++    src/gui/MidiControllerCanvas.cpp
++    src/gui/MidiMappingDialog.cpp
++    src/gui/MidiVisualMapperDialog.cpp)
+ if (USE_SYSTEM_RTMIDI)
+     find_package(PkgConfig REQUIRED)
+     if(PkgConfig_FOUND)
+diff --git a/docs/user/docs/midi-controller-mapping.md b/docs/user/docs/midi-controller-mapping.md
+index e4b6604..eaf28a7 100644
+--- a/docs/user/docs/midi-controller-mapping.md
++++ b/docs/user/docs/midi-controller-mapping.md
+@@ -38,6 +38,7 @@ AetherSDR supports class-compliant USB MIDI controllers for hands-on control of
+ - Binding table: **Parameter**, **MIDI Source**, **Channel**, **Invert**, **Relative**, an edit (**✎**) button and a delete (**×**) button
+ - Category filter: All, RX, TX, Phone/CW, EQ, Global, Mode, Band, Filter, Slice, Display, Frequency
+ - **Learn** / **Manual…** to add a binding, **Clear All** to remove every binding
++- **Visual Mapper…** — map controls on a picture of your controller (see below)
+ - **Profile** row: **Save**, **Load**, **Import...**, **Export...**
+ 
+ ## Adding bindings
+@@ -61,6 +62,22 @@ Endless encoders send small "turned up / turned down" deltas instead of an absol
+ 
+ The **VFO Tune Knob** parameter is meant for an endless encoder bound as **Relative**; as an absolute control it treats 64 as center.
+ 
++## Using the visual mapper
++
++**Visual Mapper…** opens a picture of your controller with the function bound to every knob, fader, wheel and button written above it.
++
++1. Pick your controller in **Controller**. AetherSDR ships a layout for the Hercules DJControl MP3 e2 (also MP3 LE and Glow).
++2. Click a control in the picture, or press or turn it on the controller itself while **Select a control by touching it on the controller** is ticked.
++3. Pick a function from the list on the right. The list shows only what that control can drive: buttons get on/off and press actions, knobs and faders get levels, and endless wheels get **VFO Tune Knob**.
++
++The change is live and saved immediately, and it shows in the binding table. Each function can be on one control only; picking a function already in use moves it to the selected control. **Reverse direction** flips a knob, fader or wheel, and **Unassign** clears the control.
++
++On controllers with key banks (the MP3 e2's **Loops/Fx** button switches the number keys between 1–4 and 5–8), use the bank buttons at the top or click the bank switch in the picture.
++
++**Photo…** puts a photo of your own controller behind the drawing. Take it straight from above and crop it to the controller's edges. It is stored in the `layouts` folder next to your profiles and can be removed with **Remove photo**.
++
++To add another controller, put a layout file in the `layouts` folder (`~/.config/AetherSDR/midi/layouts/` on Linux, `%LOCALAPPDATA%\AetherSDR\midi\layouts\` on Windows, `~/Library/Preferences/AetherSDR/midi/layouts/` on macOS). The format is described in `src/core/MidiControllerLayout.h`; `resources/midi-layouts/hercules-djcontrol-mp3-e2.json` is a complete example.
++
+ ## Using profiles
+ 
+ Save your bindings as named profiles to switch between controllers or layouts.
+diff --git a/resources/midi-layouts/hercules-djcontrol-mp3-e2.json b/resources/midi-layouts/hercules-djcontrol-mp3-e2.json
+new file mode 100644
+index 0000000..12793bb
+--- /dev/null
++++ b/resources/midi-layouts/hercules-djcontrol-mp3-e2.json
+@@ -0,0 +1,837 @@
++{
++  "format": "aethersdr-midi-layout",
++  "version": 1,
++  "id": "hercules-djcontrol-mp3-e2",
++  "name": "Hercules DJControl MP3 e2 / MP3 LE / Glow",
++  "notes": "MIDI numbers from the Mixxx project's MP3 e2 mapping (factory default channel 1). Coordinates match a 650x450 top-view photo scaled x2. The Loops/Fx button has no MIDI message of its own: it switches the four number keys between notes for keys 1-4 and 5-8.",
++  "width": 1300,
++  "height": 900,
++  "banks": [
++    {
++      "id": "loop",
++      "label": "Keys 1–4"
++    },
++    {
++      "id": "fx",
++      "label": "Keys 5–8 (Loops/Fx lit)"
++    }
++  ],
++  "bankSwitches": [
++    {
++      "x": 346,
++      "y": 98,
++      "w": 100,
++      "h": 32,
++      "label": "LOOPS/FX"
++    },
++    {
++      "x": 966,
++      "y": 98,
++      "w": 100,
++      "h": 32,
++      "label": "LOOPS/FX"
++    }
++  ],
++  "sections": [
++    {
++      "x": 140,
++      "y": 225,
++      "w": 208,
++      "h": 346
++    },
++    {
++      "x": 1160,
++      "y": 225,
++      "w": 208,
++      "h": 346
++    },
++    {
++      "x": 346,
++      "y": 176,
++      "w": 172,
++      "h": 220
++    },
++    {
++      "x": 966,
++      "y": 176,
++      "w": 172,
++      "h": 220
++    },
++    {
++      "x": 650,
++      "y": 262,
++      "w": 204,
++      "h": 232
++    }
++  ],
++  "controls": [
++    {
++      "id": "a.key1",
++      "name": "Deck A key 1",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 1,
++      "shape": "key",
++      "x": 300,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "1",
++      "bank": "loop"
++    },
++    {
++      "id": "a.key5",
++      "name": "Deck A key 5",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 5,
++      "shape": "key",
++      "x": 300,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "5",
++      "bank": "fx"
++    },
++    {
++      "id": "a.key2",
++      "name": "Deck A key 2",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 2,
++      "shape": "key",
++      "x": 392,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "2",
++      "bank": "loop"
++    },
++    {
++      "id": "a.key6",
++      "name": "Deck A key 6",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 6,
++      "shape": "key",
++      "x": 392,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "6",
++      "bank": "fx"
++    },
++    {
++      "id": "a.key3",
++      "name": "Deck A key 3",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 3,
++      "shape": "key",
++      "x": 300,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "3",
++      "bank": "loop"
++    },
++    {
++      "id": "a.key7",
++      "name": "Deck A key 7",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 7,
++      "shape": "key",
++      "x": 300,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "7",
++      "bank": "fx"
++    },
++    {
++      "id": "a.key4",
++      "name": "Deck A key 4",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 4,
++      "shape": "key",
++      "x": 392,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "4",
++      "bank": "loop"
++    },
++    {
++      "id": "a.key8",
++      "name": "Deck A key 8",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 8,
++      "shape": "key",
++      "x": 392,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "8",
++      "bank": "fx"
++    },
++    {
++      "id": "a.masterTempo",
++      "name": "Deck A Master Tempo",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 19,
++      "shape": "pill",
++      "x": 140,
++      "y": 96,
++      "w": 88,
++      "h": 34,
++      "label": "M.TEMPO"
++    },
++    {
++      "id": "a.pitch",
++      "name": "Deck A Pitch knob",
++      "group": "Deck A",
++      "kind": "encoder",
++      "message": "cc",
++      "number": 50,
++      "shape": "knob",
++      "x": 140,
++      "y": 184,
++      "r": 30
++    },
++    {
++      "id": "a.pitchBendDown",
++      "name": "Deck A Pitch bend −",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 10,
++      "shape": "pill",
++      "x": 90,
++      "y": 274,
++      "w": 60,
++      "h": 36,
++      "label": "−"
++    },
++    {
++      "id": "a.pitchBendUp",
++      "name": "Deck A Pitch bend +",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 11,
++      "shape": "pill",
++      "x": 190,
++      "y": 274,
++      "w": 60,
++      "h": 36,
++      "label": "+"
++    },
++    {
++      "id": "a.sync",
++      "name": "Deck A Sync",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 18,
++      "shape": "pill",
++      "x": 140,
++      "y": 352,
++      "w": 80,
++      "h": 34,
++      "label": "SYNC"
++    },
++    {
++      "id": "a.rewind",
++      "name": "Deck A Rewind",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 12,
++      "shape": "pill",
++      "x": 300,
++      "y": 350,
++      "w": 64,
++      "h": 36,
++      "label": "◀◀"
++    },
++    {
++      "id": "a.forward",
++      "name": "Deck A Fast forward",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 13,
++      "shape": "pill",
++      "x": 392,
++      "y": 350,
++      "w": 64,
++      "h": 36,
++      "label": "▶▶"
++    },
++    {
++      "id": "a.jog",
++      "name": "Deck A Jog wheel",
++      "group": "Deck A",
++      "kind": "encoder",
++      "message": "cc",
++      "number": 48,
++      "shape": "jog",
++      "x": 270,
++      "y": 580,
++      "r": 165
++    },
++    {
++      "id": "a.cue",
++      "name": "Deck A Cue",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 14,
++      "shape": "pill",
++      "x": 120,
++      "y": 808,
++      "w": 80,
++      "h": 40,
++      "label": "CUE"
++    },
++    {
++      "id": "a.play",
++      "name": "Deck A Play",
++      "group": "Deck A",
++      "kind": "button",
++      "message": "note",
++      "number": 15,
++      "shape": "pill",
++      "x": 240,
++      "y": 808,
++      "w": 80,
++      "h": 40,
++      "label": "▶‖"
++    },
++    {
++      "id": "a.treble",
++      "name": "Deck A Treble knob",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 53,
++      "shape": "knob",
++      "x": 500,
++      "y": 96,
++      "r": 28,
++      "caption": "TREBLE"
++    },
++    {
++      "id": "a.medium",
++      "name": "Deck A Medium knob",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 54,
++      "shape": "knob",
++      "x": 500,
++      "y": 208,
++      "r": 28,
++      "caption": "MEDIUM"
++    },
++    {
++      "id": "a.bass",
++      "name": "Deck A Bass knob",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 55,
++      "shape": "knob",
++      "x": 500,
++      "y": 320,
++      "r": 28,
++      "caption": "BASS"
++    },
++    {
++      "id": "a.listen",
++      "name": "Listen A (headphone)",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 16,
++      "shape": "pill",
++      "x": 500,
++      "y": 420,
++      "w": 60,
++      "h": 34,
++      "label": "PFL"
++    },
++    {
++      "id": "a.load",
++      "name": "Load A",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 17,
++      "shape": "pill",
++      "x": 596,
++      "y": 410,
++      "w": 84,
++      "h": 34,
++      "label": "LOAD A"
++    },
++    {
++      "id": "a.volume",
++      "name": "Deck A Volume fader",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 52,
++      "shape": "fader",
++      "x": 512,
++      "y": 490,
++      "length": 180,
++      "caption": "VOLUME"
++    },
++    {
++      "id": "mixer.scratch",
++      "name": "Scratch",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 45,
++      "shape": "pill",
++      "x": 596,
++      "y": 96,
++      "w": 84,
++      "h": 34,
++      "label": "SCRATCH"
++    },
++    {
++      "id": "mixer.automix",
++      "name": "Automix",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 46,
++      "shape": "pill",
++      "x": 704,
++      "y": 96,
++      "w": 84,
++      "h": 34,
++      "label": "AUTOMIX"
++    },
++    {
++      "id": "mixer.up",
++      "name": "Up arrow",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 41,
++      "shape": "pill",
++      "x": 650,
++      "y": 184,
++      "w": 84,
++      "h": 34,
++      "label": "▲"
++    },
++    {
++      "id": "mixer.folder",
++      "name": "Folder",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 44,
++      "shape": "pill",
++      "x": 584,
++      "y": 256,
++      "w": 84,
++      "h": 34,
++      "label": "FOLDER"
++    },
++    {
++      "id": "mixer.files",
++      "name": "Files",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 43,
++      "shape": "pill",
++      "x": 716,
++      "y": 256,
++      "w": 84,
++      "h": 34,
++      "label": "FILES"
++    },
++    {
++      "id": "mixer.down",
++      "name": "Down arrow",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 42,
++      "shape": "pill",
++      "x": 650,
++      "y": 332,
++      "w": 84,
++      "h": 34,
++      "label": "▼"
++    },
++    {
++      "id": "mixer.crossfader",
++      "name": "Crossfader",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 56,
++      "shape": "crossfader",
++      "x": 650,
++      "y": 812,
++      "length": 220
++    },
++    {
++      "id": "b.key1",
++      "name": "Deck B key 1",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 21,
++      "shape": "key",
++      "x": 920,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "1",
++      "bank": "loop"
++    },
++    {
++      "id": "b.key5",
++      "name": "Deck B key 5",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 25,
++      "shape": "key",
++      "x": 920,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "5",
++      "bank": "fx"
++    },
++    {
++      "id": "b.key2",
++      "name": "Deck B key 2",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 22,
++      "shape": "key",
++      "x": 1012,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "2",
++      "bank": "loop"
++    },
++    {
++      "id": "b.key6",
++      "name": "Deck B key 6",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 26,
++      "shape": "key",
++      "x": 1012,
++      "y": 176,
++      "w": 64,
++      "h": 40,
++      "label": "6",
++      "bank": "fx"
++    },
++    {
++      "id": "b.key3",
++      "name": "Deck B key 3",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 23,
++      "shape": "key",
++      "x": 920,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "3",
++      "bank": "loop"
++    },
++    {
++      "id": "b.key7",
++      "name": "Deck B key 7",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 27,
++      "shape": "key",
++      "x": 920,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "7",
++      "bank": "fx"
++    },
++    {
++      "id": "b.key4",
++      "name": "Deck B key 4",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 24,
++      "shape": "key",
++      "x": 1012,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "4",
++      "bank": "loop"
++    },
++    {
++      "id": "b.key8",
++      "name": "Deck B key 8",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 28,
++      "shape": "key",
++      "x": 1012,
++      "y": 252,
++      "w": 64,
++      "h": 40,
++      "label": "8",
++      "bank": "fx"
++    },
++    {
++      "id": "b.masterTempo",
++      "name": "Deck B Master Tempo",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 39,
++      "shape": "pill",
++      "x": 1154,
++      "y": 96,
++      "w": 88,
++      "h": 34,
++      "label": "M.TEMPO"
++    },
++    {
++      "id": "b.pitch",
++      "name": "Deck B Pitch knob",
++      "group": "Deck B",
++      "kind": "encoder",
++      "message": "cc",
++      "number": 51,
++      "shape": "knob",
++      "x": 1154,
++      "y": 184,
++      "r": 30
++    },
++    {
++      "id": "b.pitchBendDown",
++      "name": "Deck B Pitch bend −",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 30,
++      "shape": "pill",
++      "x": 1104,
++      "y": 274,
++      "w": 60,
++      "h": 36,
++      "label": "−"
++    },
++    {
++      "id": "b.pitchBendUp",
++      "name": "Deck B Pitch bend +",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 31,
++      "shape": "pill",
++      "x": 1200,
++      "y": 274,
++      "w": 60,
++      "h": 36,
++      "label": "+"
++    },
++    {
++      "id": "b.sync",
++      "name": "Deck B Sync",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 38,
++      "shape": "pill",
++      "x": 1154,
++      "y": 352,
++      "w": 80,
++      "h": 34,
++      "label": "SYNC"
++    },
++    {
++      "id": "b.rewind",
++      "name": "Deck B Rewind",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 32,
++      "shape": "pill",
++      "x": 920,
++      "y": 350,
++      "w": 64,
++      "h": 36,
++      "label": "◀◀"
++    },
++    {
++      "id": "b.forward",
++      "name": "Deck B Fast forward",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 33,
++      "shape": "pill",
++      "x": 1012,
++      "y": 350,
++      "w": 64,
++      "h": 36,
++      "label": "▶▶"
++    },
++    {
++      "id": "b.jog",
++      "name": "Deck B Jog wheel",
++      "group": "Deck B",
++      "kind": "encoder",
++      "message": "cc",
++      "number": 49,
++      "shape": "jog",
++      "x": 1030,
++      "y": 580,
++      "r": 165
++    },
++    {
++      "id": "b.cue",
++      "name": "Deck B Cue",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 34,
++      "shape": "pill",
++      "x": 1050,
++      "y": 808,
++      "w": 80,
++      "h": 40,
++      "label": "CUE"
++    },
++    {
++      "id": "b.play",
++      "name": "Deck B Play",
++      "group": "Deck B",
++      "kind": "button",
++      "message": "note",
++      "number": 35,
++      "shape": "pill",
++      "x": 1176,
++      "y": 808,
++      "w": 80,
++      "h": 40,
++      "label": "▶‖"
++    },
++    {
++      "id": "b.treble",
++      "name": "Deck B Treble knob",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 58,
++      "shape": "knob",
++      "x": 796,
++      "y": 96,
++      "r": 28,
++      "caption": "TREBLE"
++    },
++    {
++      "id": "b.medium",
++      "name": "Deck B Medium knob",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 59,
++      "shape": "knob",
++      "x": 796,
++      "y": 208,
++      "r": 28,
++      "caption": "MEDIUM"
++    },
++    {
++      "id": "b.bass",
++      "name": "Deck B Bass knob",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 60,
++      "shape": "knob",
++      "x": 796,
++      "y": 320,
++      "r": 28,
++      "caption": "BASS"
++    },
++    {
++      "id": "b.listen",
++      "name": "Listen B (headphone)",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 36,
++      "shape": "pill",
++      "x": 796,
++      "y": 420,
++      "w": 60,
++      "h": 34,
++      "label": "PFL"
++    },
++    {
++      "id": "b.load",
++      "name": "Load B",
++      "group": "Mixer",
++      "kind": "button",
++      "message": "note",
++      "number": 37,
++      "shape": "pill",
++      "x": 704,
++      "y": 410,
++      "w": 84,
++      "h": 34,
++      "label": "LOAD B"
++    },
++    {
++      "id": "b.volume",
++      "name": "Deck B Volume fader",
++      "group": "Mixer",
++      "kind": "absolute",
++      "message": "cc",
++      "number": 57,
++      "shape": "fader",
++      "x": 788,
++      "y": 490,
++      "length": 180,
++      "caption": "VOLUME"
++    }
++  ]
++}
+diff --git a/resources/resources.qrc b/resources/resources.qrc
+index c0706eb..0336a26 100644
+--- a/resources/resources.qrc
++++ b/resources/resources.qrc
+@@ -23,6 +23,11 @@
+         <file alias="rac-canada.json">bandplans/rac-canada.json</file>
+         <file alias="ssa-sweden.json">bandplans/ssa-sweden.json</file>
+     </qresource>
++    <!-- Controller pictures for the visual MIDI mapper; one JSON per
++         controller (format: src/core/MidiControllerLayout.h). -->
++    <qresource prefix="/midi-layouts">
++        <file alias="hercules-djcontrol-mp3-e2.json">midi-layouts/hercules-djcontrol-mp3-e2.json</file>
++    </qresource>
+     <qresource prefix="/sounds">
+         <file alias="aetherial.wav">aetherial.wav</file>
+     </qresource>
+diff --git a/src/core/MidiControllerLayout.cpp b/src/core/MidiControllerLayout.cpp
+new file mode 100644
+index 0000000..d57c4d1
+--- /dev/null
++++ b/src/core/MidiControllerLayout.cpp
+@@ -0,0 +1,301 @@
++#include "MidiControllerLayout.h"
++
++#include <QDir>
++#include <QFile>
++#include <QFileInfo>
++#include <QHash>
++#include <QJsonArray>
++#include <QJsonDocument>
++#include <QJsonObject>
++#include <QJsonParseError>
++#include <QSet>
++#include <QStandardPaths>
++
++#include <cmath>
++
++namespace AetherSDR {
++
++namespace {
++
++constexpr double kMaxLayoutExtent = 10000.0;
++
++bool finitePositive(double v) { return std::isfinite(v) && v > 0.0 && v <= kMaxLayoutExtent; }
++bool finiteInRange(double v)  { return std::isfinite(v) && v >= 0.0 && v <= kMaxLayoutExtent; }
++
++// Reads a centred rectangle {x, y, w, h} (x/y = centre).
++bool readCentredRect(const QJsonObject& o, QRectF* out)
++{
++    const double x = o.value("x").toDouble(-1), y = o.value("y").toDouble(-1);
++    const double w = o.value("w").toDouble(-1), h = o.value("h").toDouble(-1);
++    if (!finiteInRange(x) || !finiteInRange(y) || !finitePositive(w) || !finitePositive(h))
++        return false;
++    *out = QRectF(x - w / 2.0, y - h / 2.0, w, h);
++    return true;
++}
++
++QString rowName(int index, const QJsonObject& o)
++{
++    const QString id = o.value("id").toString();
++    return id.isEmpty() ? QStringLiteral("control #%1").arg(index + 1)
++                        : QStringLiteral("control \"%1\"").arg(id);
++}
++
++} // namespace
++
++// ── MidiLayoutControl ───────────────────────────────────────────────────────
++
++QRectF MidiLayoutControl::hitRect() const
++{
++    switch (shape) {
++    case Shape::Key:
++    case Shape::Pill:
++        return QRectF(center.x() - size.width() / 2.0, center.y() - size.height() / 2.0,
++                      size.width(), size.height());
++    case Shape::Knob:
++    case Shape::Jog:
++        return QRectF(center.x() - radius, center.y() - radius, 2 * radius, 2 * radius);
++    case Shape::Fader:
++        return QRectF(center.x() - 24, center.y() - 8, 48, length + 16);
++    case Shape::Crossfader:
++        return QRectF(center.x() - length / 2.0 - 8, center.y() - 24, length + 16, 48);
++    }
++    return {};
++}
++
++bool MidiLayoutControl::contains(const QPointF& p) const
++{
++    if (shape == Shape::Knob || shape == Shape::Jog) {
++        const QPointF d = p - center;
++        return d.x() * d.x() + d.y() * d.y() <= radius * radius;
++    }
++    return hitRect().contains(p);
++}
++
++QPointF MidiLayoutControl::labelAnchor() const
++{
++    const QRectF r = hitRect();
++    return QPointF(r.center().x(), r.top());
++}
++
++// ── MidiControllerLayout ────────────────────────────────────────────────────
++
++const MidiLayoutControl* MidiControllerLayout::findById(const QString& wanted) const
++{
++    for (const auto& c : controls)
++        if (c.id == wanted) return &c;
++    return nullptr;
++}
++
++const MidiLayoutControl* MidiControllerLayout::findBySource(
++    MidiLayoutControl::Message message, int number) const
++{
++    for (const auto& c : controls)
++        if (c.message == message && c.number == number) return &c;
++    return nullptr;
++}
++
++// ── Parsing ─────────────────────────────────────────────────────────────────
++
++MidiLayoutLoadResult parseMidiControllerLayout(const QByteArray& json)
++{
++    MidiLayoutLoadResult result;
++    auto fail = [&result](const QString& why) {
++        result.error = why;
++        result.layout = {};
++        return result;
++    };
++
++    QJsonParseError perr{};
++    const QJsonDocument doc = QJsonDocument::fromJson(json, &perr);
++    if (perr.error != QJsonParseError::NoError)
++        return fail(QStringLiteral("Not valid JSON: %1 (offset %2).")
++                        .arg(perr.errorString()).arg(perr.offset));
++    if (!doc.isObject())
++        return fail(QStringLiteral("The file must contain one JSON object."));
++
++    const QJsonObject root = doc.object();
++    if (root.value("format").toString() != QLatin1String("aethersdr-midi-layout"))
++        return fail(QStringLiteral("Not an AetherSDR MIDI layout (\"format\" must be "
++                                   "\"aethersdr-midi-layout\")."));
++    if (root.value("version").toInt() != 1)
++        return fail(QStringLiteral("Unsupported layout version %1; this AetherSDR reads version 1.")
++                        .arg(root.value("version").toInt()));
++
++    MidiControllerLayout& L = result.layout;
++    L.id = root.value("id").toString().trimmed();
++    L.name = root.value("name").toString().trimmed();
++    L.notes = root.value("notes").toString();
++    if (L.id.isEmpty() || L.id.contains('/') || L.id.contains('\\') || L.id.startsWith('.'))
++        return fail(QStringLiteral("The layout needs a plain \"id\" (no slashes, no leading dot)."));
++    if (L.name.isEmpty()) L.name = L.id;
++
++    const double width = root.value("width").toDouble(-1);
++    const double height = root.value("height").toDouble(-1);
++    if (!finitePositive(width) || !finitePositive(height))
++        return fail(QStringLiteral("\"width\" and \"height\" must be positive numbers up to %1.")
++                        .arg(kMaxLayoutExtent));
++    L.size = QSizeF(width, height);
++
++    QSet<QString> bankIds;
++    for (const auto& v : root.value("banks").toArray()) {
++        const QJsonObject b = v.toObject();
++        MidiLayoutBank bank{b.value("id").toString().trimmed(), b.value("label").toString()};
++        if (bank.id.isEmpty() || bankIds.contains(bank.id))
++            return fail(QStringLiteral("Every bank needs a unique \"id\"."));
++        if (bank.label.isEmpty()) bank.label = bank.id;
++        bankIds.insert(bank.id);
++        L.banks.append(bank);
++    }
++
++    for (const auto& v : root.value("bankSwitches").toArray()) {
++        QRectF r;
++        if (!readCentredRect(v.toObject(), &r))
++            return fail(QStringLiteral("A bank switch has a missing or bad x/y/w/h."));
++        L.bankSwitches.append(r);
++        L.bankSwitchLabels.append(v.toObject().value("label").toString());
++    }
++    if (!L.bankSwitches.isEmpty() && L.banks.size() < 2)
++        return fail(QStringLiteral("Bank switches need at least two banks to switch between."));
++
++    for (const auto& v : root.value("sections").toArray()) {
++        QRectF r;
++        if (!readCentredRect(v.toObject(), &r))
++            return fail(QStringLiteral("A section outline has a missing or bad x/y/w/h."));
++        L.sections.append(r);
++    }
++
++    static const QHash<QString, MidiLayoutControl::Kind> kKinds{
++        {"button", MidiLayoutControl::Kind::Button},
++        {"absolute", MidiLayoutControl::Kind::Absolute},
++        {"encoder", MidiLayoutControl::Kind::Encoder}};
++    static const QHash<QString, MidiLayoutControl::Shape> kShapes{
++        {"key", MidiLayoutControl::Shape::Key},
++        {"pill", MidiLayoutControl::Shape::Pill},
++        {"knob", MidiLayoutControl::Shape::Knob},
++        {"jog", MidiLayoutControl::Shape::Jog},
++        {"fader", MidiLayoutControl::Shape::Fader},
++        {"crossfader", MidiLayoutControl::Shape::Crossfader}};
++
++    const QJsonArray rows = root.value("controls").toArray();
++    if (rows.isEmpty())
++        return fail(QStringLiteral("The layout has no \"controls\"."));
++
++    QSet<QString> ids;
++    QSet<int> sources;  // (message << 8) | number
++    for (int i = 0; i < rows.size(); ++i) {
++        const QJsonObject o = rows.at(i).toObject();
++        const QString where = rowName(i, o);
++        MidiLayoutControl c;
++        c.id = o.value("id").toString().trimmed();
++        if (c.id.isEmpty() || ids.contains(c.id))
++            return fail(QStringLiteral("%1: every control needs a unique \"id\".").arg(where));
++        ids.insert(c.id);
++        c.name = o.value("name").toString().trimmed();
++        if (c.name.isEmpty()) c.name = c.id;
++        c.group = o.value("group").toString().trimmed();
++        c.label = o.value("label").toString();
++        c.caption = o.value("caption").toString();
++        c.bank = o.value("bank").toString().trimmed();
++        if (!c.bank.isEmpty() && !bankIds.contains(c.bank))
++            return fail(QStringLiteral("%1: bank \"%2\" is not listed in \"banks\".").arg(where, c.bank));
++
++        const QString kind = o.value("kind").toString();
++        if (!kKinds.contains(kind))
++            return fail(QStringLiteral("%1: \"kind\" must be button, absolute or encoder.").arg(where));
++        c.kind = kKinds.value(kind);
++
++        const QString msg = o.value("message").toString();
++        if (msg == QLatin1String("note")) c.message = MidiLayoutControl::Message::Note;
++        else if (msg == QLatin1String("cc")) c.message = MidiLayoutControl::Message::ControlChange;
++        else return fail(QStringLiteral("%1: \"message\" must be note or cc.").arg(where));
++        if (c.kind != MidiLayoutControl::Kind::Button && c.message != MidiLayoutControl::Message::ControlChange)
++            return fail(QStringLiteral("%1: knobs, faders and wheels must send cc.").arg(where));
++
++        const QJsonValue num = o.value("number");
++        if (!num.isDouble() || num.toDouble() != std::floor(num.toDouble())
++            || num.toInt(-1) < 0 || num.toInt(-1) > 127)
++            return fail(QStringLiteral("%1: \"number\" must be a whole number 0-127.").arg(where));
++        c.number = num.toInt();
++        const int sourceKey = (static_cast<int>(c.message) << 8) | c.number;
++        if (sources.contains(sourceKey))
++            return fail(QStringLiteral("%1: another control already sends %2 %3.")
++                            .arg(where, msg == QLatin1String("cc") ? QStringLiteral("CC") : QStringLiteral("note"))
++                            .arg(c.number));
++        sources.insert(sourceKey);
++
++        const QString shape = o.value("shape").toString();
++        if (!kShapes.contains(shape))
++            return fail(QStringLiteral("%1: unknown \"shape\" \"%2\".").arg(where, shape));
++        c.shape = kShapes.value(shape);
++
++        const double x = o.value("x").toDouble(-1), y = o.value("y").toDouble(-1);
++        if (!finiteInRange(x) || !finiteInRange(y) || x > width || y > height)
++            return fail(QStringLiteral("%1: x/y must lie inside the layout.").arg(where));
++        c.center = QPointF(x, y);
++
++        switch (c.shape) {
++        case MidiLayoutControl::Shape::Key:
++        case MidiLayoutControl::Shape::Pill: {
++            const double w = o.value("w").toDouble(-1), h = o.value("h").toDouble(-1);
++            if (!finitePositive(w) || !finitePositive(h))
++                return fail(QStringLiteral("%1: a %2 needs positive \"w\" and \"h\".").arg(where, shape));
++            c.size = QSizeF(w, h);
++            break;
++        }
++        case MidiLayoutControl::Shape::Knob:
++        case MidiLayoutControl::Shape::Jog:
++            c.radius = o.value("r").toDouble(-1);
++            if (!finitePositive(c.radius))
++                return fail(QStringLiteral("%1: a %2 needs a positive \"r\".").arg(where, shape));
++            break;
++        case MidiLayoutControl::Shape::Fader:
++        case MidiLayoutControl::Shape::Crossfader:
++            c.length = o.value("length").toDouble(-1);
++            if (!finitePositive(c.length))
++                return fail(QStringLiteral("%1: a %2 needs a positive \"length\".").arg(where, shape));
++            break;
++        }
++        L.controls.append(c);
++    }
++    return result;
++}
++
++MidiLayoutLoadResult loadMidiControllerLayout(const QString& filePath)
++{
++    QFile f(filePath);
++    if (!f.open(QIODevice::ReadOnly)) {
++        MidiLayoutLoadResult r;
++        r.error = QStringLiteral("Couldn't open %1.").arg(QDir::toNativeSeparators(filePath));
++        return r;
++    }
++    // Layout files are small; refuse anything absurd before parsing it.
++    if (f.size() > 2 * 1024 * 1024) {
++        MidiLayoutLoadResult r;
++        r.error = QStringLiteral("%1 is larger than 2 MB; that isn't a layout file.")
++                      .arg(QFileInfo(filePath).fileName());
++        return r;
++    }
++    return parseMidiControllerLayout(f.readAll());
++}
++
++QString midiLayoutUserDir()
++{
++    // Same root as MidiSettings::profileDir(), kept here so libaethercore's
++    // layout code doesn't depend on the RtMidi-guarded settings class.
++    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
++           + QStringLiteral("/AetherSDR/midi/layouts");
++}
++
++QStringList availableMidiControllerLayoutFiles()
++{
++    QStringList files;
++    const QDir builtIn(QStringLiteral(":/midi-layouts"));
++    for (const auto& fi : builtIn.entryInfoList({QStringLiteral("*.json")}, QDir::Files, QDir::Name))
++        files.append(fi.absoluteFilePath());
++    const QDir user(midiLayoutUserDir());
++    for (const auto& fi : user.entryInfoList({QStringLiteral("*.json")}, QDir::Files, QDir::Name))
++        files.append(fi.absoluteFilePath());
++    return files;
++}
++
++} // namespace AetherSDR
+diff --git a/src/core/MidiControllerLayout.h b/src/core/MidiControllerLayout.h
+new file mode 100644
+index 0000000..3f41d5b
+--- /dev/null
++++ b/src/core/MidiControllerLayout.h
+@@ -0,0 +1,103 @@
++#pragma once
++
++#include <QByteArray>
++#include <QPointF>
++#include <QRectF>
++#include <QSizeF>
++#include <QString>
++#include <QStringList>
++#include <QVector>
++
++namespace AetherSDR {
++
++// A picture of a MIDI controller's surface: where each knob, fader, wheel and
++// button sits, and which MIDI message it sends. The visual MIDI mapper draws
++// this and lets the operator click a control to bind it. Layouts are data
++// (JSON), so supporting another controller means adding a file, not code.
++//
++// File format (format "aethersdr-midi-layout", version 1):
++//   { "format": "aethersdr-midi-layout", "version": 1,
++//     "id": "vendor-model", "name": "Vendor Model",
++//     "width": 1300, "height": 900,              // layout coordinate space
++//     "banks": [ {"id": "loop", "label": "..."} ],            // optional
++//     "bankSwitches": [ {"x":..,"y":..,"w":..,"h":..,"label":".."} ], // optional
++//     "sections": [ {"x":..,"y":..,"w":..,"h":..} ],          // optional outlines
++//     "controls": [
++//       { "id": "a.jog", "name": "Deck A Jog wheel", "group": "Deck A",
++//         "kind": "button" | "absolute" | "encoder",
++//         "message": "note" | "cc", "number": 0-127,
++//         "shape": "key" | "pill" | "knob" | "jog" | "fader" | "crossfader",
++//         "x": .., "y": ..,            // centre (fader: top of the track)
++//         "w": .., "h": ..,            // key, pill
++//         "r": ..,                     // knob, jog
++//         "length": ..,                // fader, crossfader
++//         "label": "..", "caption": "..", "bank": "loop" } ] }
++//
++// Every row is validated on load (Principle: boundary input validation); a
++// file with any bad row is refused as a whole with the reason named.
++struct MidiLayoutControl {
++    enum class Kind { Button, Absolute, Encoder };
++    enum class Message { Note, ControlChange };
++    enum class Shape { Key, Pill, Knob, Jog, Fader, Crossfader };
++
++    QString id;
++    QString name;
++    QString group;
++    QString label;     // text drawn on the control itself
++    QString caption;   // small text drawn under knobs and faders
++    QString bank;      // empty = always visible
++    Kind    kind{Kind::Button};
++    Message message{Message::Note};
++    Shape   shape{Shape::Pill};
++    int     number{0};
++    QPointF center;    // fader: top centre of the track
++    QSizeF  size;      // key, pill
++    double  radius{0}; // knob, jog
++    double  length{0}; // fader, crossfader
++
++    // Area that accepts a click, in layout coordinates.
++    QRectF hitRect() const;
++    bool   contains(const QPointF& layoutPoint) const;
++    // Top centre of the space just above the control, where its binding
++    // label is drawn.
++    QPointF labelAnchor() const;
++};
++
++struct MidiLayoutBank {
++    QString id;
++    QString label;
++};
++
++struct MidiControllerLayout {
++    QString id;
++    QString name;
++    QString notes;
++    QSizeF  size;
++    QVector<MidiLayoutBank>    banks;
++    QVector<QRectF>            bankSwitches;
++    QStringList                bankSwitchLabels;
++    QVector<QRectF>            sections;
++    QVector<MidiLayoutControl> controls;
++
++    const MidiLayoutControl* findById(const QString& id) const;
++    const MidiLayoutControl* findBySource(MidiLayoutControl::Message message,
++                                          int number) const;
++};
++
++struct MidiLayoutLoadResult {
++    MidiControllerLayout layout;
++    QString error;
++    bool ok() const { return error.isEmpty(); }
++};
++
++MidiLayoutLoadResult parseMidiControllerLayout(const QByteArray& json);
++MidiLayoutLoadResult loadMidiControllerLayout(const QString& filePath);
++
++// Layouts shipped in the Qt resource bundle (":/midi-layouts/*.json") plus any
++// the operator dropped into <MIDI profile dir>/layouts/. Returns file paths.
++QStringList availableMidiControllerLayoutFiles();
++
++// Where operator-supplied layouts and controller photos live.
++QString midiLayoutUserDir();
++
++} // namespace AetherSDR
+diff --git a/src/gui/MidiControllerCanvas.cpp b/src/gui/MidiControllerCanvas.cpp
+new file mode 100644
+index 0000000..0bc70e9
+--- /dev/null
++++ b/src/gui/MidiControllerCanvas.cpp
+@@ -0,0 +1,422 @@
++#include "MidiControllerCanvas.h"
++
++#ifdef HAVE_MIDI
++
++#include "core/ThemeManager.h"
++
++#include <QFontMetricsF>
++#include <QKeyEvent>
++#include <QMouseEvent>
++#include <QPainter>
++#include <QPainterPath>
++
++#include <algorithm>
++#include <cmath>
++
++namespace AetherSDR {
++
++namespace {
++
++// Text sizes in layout units; the whole drawing scales with the widget.
++constexpr double kLabelPx   = 18.0;
++constexpr double kInnerPx   = 17.0;
++constexpr double kCaptionPx = 14.0;
++
++QColor token(const QWidget* w, const char* name)
++{
++    return ThemeManager::instance().color(w, QString::fromLatin1(name));
++}
++
++} // namespace
++
++MidiControllerCanvas::MidiControllerCanvas(QWidget* parent)
++    : QWidget(parent)
++{
++    setMouseTracking(true);
++    setFocusPolicy(Qt::StrongFocus);
++    setObjectName(QStringLiteral("midiControllerCanvas"));
++    setAccessibleName(QStringLiteral("Controller layout"));
++    m_flashTimer.setSingleShot(true);
++    m_flashTimer.setInterval(450);
++    connect(&m_flashTimer, &QTimer::timeout, this, [this] { m_flash.clear(); update(); });
++    connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
++            this, qOverload<>(&QWidget::update));
++}
++
++void MidiControllerCanvas::setControllerLayout(const MidiControllerLayout* layout)
++{
++    m_layout = layout;
++    m_selected.clear();
++    m_hover.clear();
++    m_bank = (layout && !layout->banks.isEmpty()) ? layout->banks.first().id : QString();
++    updateGeometry();
++    update();
++}
++
++void MidiControllerCanvas::setBank(const QString& bank)
++{
++    if (m_bank == bank) return;
++    m_bank = bank;
++    update();
++}
++
++void MidiControllerCanvas::setSelectedControl(const QString& id)
++{
++    m_selected = id;
++    updateAccessibleDescription();
++    update();
++}
++
++void MidiControllerCanvas::setLabelProvider(LabelProvider provider)
++{
++    m_labels = std::move(provider);
++    update();
++}
++
++void MidiControllerCanvas::setPhoto(const QPixmap& photo)
++{
++    m_photo = photo;
++    update();
++}
++
++void MidiControllerCanvas::flashControl(const QString& id)
++{
++    m_flash = id;
++    m_flashTimer.start();
++    update();
++}
++
++QSize MidiControllerCanvas::sizeHint() const
++{
++    if (!m_layout) return {650, 450};
++    return QSize(qRound(m_layout->size.width() * 0.6), qRound(m_layout->size.height() * 0.6));
++}
++
++QSize MidiControllerCanvas::minimumSizeHint() const
++{
++    return {420, 300};
++}
++
++// ── Geometry ────────────────────────────────────────────────────────────────
++
++QTransform MidiControllerCanvas::toWidget() const
++{
++    if (!m_layout) return {};
++    const double sx = width() / m_layout->size.width();
++    const double sy = height() / m_layout->size.height();
++    const double s = std::min(sx, sy);
++    const double ox = (width() - m_layout->size.width() * s) / 2.0;
++    const double oy = (height() - m_layout->size.height() * s) / 2.0;
++    QTransform t;
++    t.translate(ox, oy);
++    t.scale(s, s);
++    return t;
++}
++
++QPointF MidiControllerCanvas::toLayout(const QPointF& widgetPoint) const
++{
++    bool invertible = false;
++    const QTransform inv = toWidget().inverted(&invertible);
++    return invertible ? inv.map(widgetPoint) : QPointF(-1, -1);
++}
++
++bool MidiControllerCanvas::isInCurrentBank(const MidiLayoutControl& c) const
++{
++    return c.bank.isEmpty() || c.bank == m_bank;
++}
++
++QVector<const MidiLayoutControl*> MidiControllerCanvas::visibleControls() const
++{
++    QVector<const MidiLayoutControl*> out;
++    if (!m_layout) return out;
++    for (const auto& c : m_layout->controls)
++        if (isInCurrentBank(c)) out.append(&c);
++    return out;
++}
++
++QString MidiControllerCanvas::controlAt(const QPointF& widgetPoint) const
++{
++    const QPointF lp = toLayout(widgetPoint);
++    // Small controls first, so a pill drawn over a large shape still wins.
++    const MidiLayoutControl* best = nullptr;
++    double bestArea = 0;
++    for (const auto* c : visibleControls()) {
++        if (!c->contains(lp)) continue;
++        const QRectF r = c->hitRect();
++        const double area = r.width() * r.height();
++        if (!best || area < bestArea) { best = c; bestArea = area; }
++    }
++    return best ? best->id : QString();
++}
++
++int MidiControllerCanvas::bankSwitchAt(const QPointF& widgetPoint) const
++{
++    if (!m_layout) return -1;
++    const QPointF lp = toLayout(widgetPoint);
++    for (int i = 0; i < m_layout->bankSwitches.size(); ++i)
++        if (m_layout->bankSwitches.at(i).contains(lp)) return i;
++    return -1;
++}
++
++// ── Input ───────────────────────────────────────────────────────────────────
++
++void MidiControllerCanvas::mousePressEvent(QMouseEvent* event)
++{
++    if (event->button() != Qt::LeftButton) { QWidget::mousePressEvent(event); return; }
++    if (bankSwitchAt(event->position()) >= 0) { emit bankSwitchClicked(); return; }
++    const QString id = controlAt(event->position());
++    if (id.isEmpty()) return;
++    setFocus(Qt::MouseFocusReason);
++    emit controlClicked(id);
++}
++
++void MidiControllerCanvas::mouseMoveEvent(QMouseEvent* event)
++{
++    const QString id = controlAt(event->position());
++    const bool overSwitch = bankSwitchAt(event->position()) >= 0;
++    setCursor(id.isEmpty() && !overSwitch ? Qt::ArrowCursor : Qt::PointingHandCursor);
++    if (id != m_hover) {
++        m_hover = id;
++        const auto* c = m_layout ? m_layout->findById(id) : nullptr;
++        setToolTip(c ? c->name : (overSwitch ? QStringLiteral("Switch key bank") : QString()));
++        update();
++    }
++}
++
++void MidiControllerCanvas::leaveEvent(QEvent* event)
++{
++    m_hover.clear();
++    update();
++    QWidget::leaveEvent(event);
++}
++
++void MidiControllerCanvas::moveSelection(int step)
++{
++    const auto controls = visibleControls();
++    if (controls.isEmpty()) return;
++    int at = -1;
++    for (int i = 0; i < controls.size(); ++i)
++        if (controls.at(i)->id == m_selected) at = i;
++    const int n = controls.size();
++    const int next = at < 0 ? 0 : ((at + step) % n + n) % n;
++    emit controlClicked(controls.at(next)->id);
++}
++
++void MidiControllerCanvas::keyPressEvent(QKeyEvent* event)
++{
++    switch (event->key()) {
++    case Qt::Key_Right:
++    case Qt::Key_Down:
++        moveSelection(+1);
++        return;
++    case Qt::Key_Left:
++    case Qt::Key_Up:
++        moveSelection(-1);
++        return;
++    case Qt::Key_B:
++        emit bankSwitchClicked();
++        return;
++    default:
++        QWidget::keyPressEvent(event);
++    }
++}
++
++void MidiControllerCanvas::updateAccessibleDescription()
++{
++    const auto* c = m_layout ? m_layout->findById(m_selected) : nullptr;
++    if (!c) { setAccessibleDescription(QString()); return; }
++    const QString fn = m_labels ? m_labels(*c) : QString();
++    setAccessibleDescription(QStringLiteral("%1: %2").arg(
++        c->name, fn.isEmpty() ? QStringLiteral("not assigned") : fn));
++}
++
++// ── Painting ────────────────────────────────────────────────────────────────
++
++void MidiControllerCanvas::paintEvent(QPaintEvent*)
++{
++    QPainter p(this);
++    p.setRenderHint(QPainter::Antialiasing);
++    p.setRenderHint(QPainter::TextAntialiasing);
++    p.fillRect(rect(), token(this, "color.background.0"));
++    if (!m_layout) {
++        p.setPen(token(this, "color.text.secondary"));
++        p.drawText(rect(), Qt::AlignCenter, QStringLiteral("No controller layout loaded"));
++        return;
++    }
++
++    p.setTransform(toWidget());
++    const QRectF board(QPointF(0, 0), m_layout->size);
++    const bool photo = !m_photo.isNull();
++
++    // Board, then the operator's photo fitted inside it.
++    QPainterPath boardPath;
++    boardPath.addRoundedRect(board.adjusted(4, 4, -4, -4), 24, 24);
++    p.fillPath(boardPath, token(this, "color.background.1"));
++    if (photo) {
++        QSizeF fit = m_photo.size().toSizeF();
++        fit.scale(board.size(), Qt::KeepAspectRatio);
++        const QRectF target(board.center().x() - fit.width() / 2.0,
++                            board.center().y() - fit.height() / 2.0,
++                            fit.width(), fit.height());
++        p.save();
++        p.setClipPath(boardPath);
++        p.drawPixmap(target, m_photo, QRectF(m_photo.rect()));
++        p.restore();
++    } else {
++        p.setPen(QPen(token(this, "color.border.strong"), 2));
++        p.setBrush(Qt::NoBrush);
++        p.drawPath(boardPath);
++        for (const auto& s : m_layout->sections)
++            p.drawRoundedRect(s, 12, 12);
++    }
++
++    // Bank switches (no MIDI of their own: they change what the keys send).
++    QFont inner = font();
++    inner.setPixelSize(qRound(kInnerPx));
++    inner.setBold(true);
++    for (int i = 0; i < m_layout->bankSwitches.size(); ++i) {
++        const QRectF r = m_layout->bankSwitches.at(i);
++        QPen pen(token(this, "color.text.secondary"), 1.5, Qt::DashLine);
++        p.setPen(pen);
++        p.setBrush(photo ? QBrush(theme::withAlpha(this, "color.background.0", 150)) : QBrush(Qt::NoBrush));
++        p.drawRoundedRect(r, 6, 6);
++        const QString text = m_layout->bankSwitchLabels.value(i);
++        paintText(p, QPointF(r.center().x(), r.center().y() + kInnerPx * 0.35), text, inner,
++                  token(this, "color.text.primary"), photo);
++    }
++
++    for (const auto& c : m_layout->controls) {
++        if (!isInCurrentBank(c)) continue;
++        const QString fn = m_labels ? m_labels(c) : QString();
++        paintControl(p, c, !fn.isEmpty());
++        paintLabel(p, c, fn);
++    }
++}
++
++void MidiControllerCanvas::paintControl(QPainter& p, const MidiLayoutControl& c, bool assigned) const
++{
++    const bool photo = !m_photo.isNull();
++    QColor fill = assigned ? token(this, "color.accent") : token(this, "color.background.2");
++    if (photo) fill.setAlpha(assigned ? 120 : 70);
++
++    QColor edge = token(this, "color.border.strong");
++    double edgeWidth = 1.5;
++    if (photo) { edge = token(this, "color.text.primary"); edgeWidth = 2; }
++    if (c.id == m_hover) { edge = token(this, "color.text.secondary"); edgeWidth = 2.5; }
++    if (c.id == m_selected) { edge = token(this, "color.accent.warning"); edgeWidth = 4; }
++    if (c.id == m_flash) { edge = token(this, "color.accent.success"); edgeWidth = 5; }
++    p.setPen(QPen(edge, edgeWidth));
++    p.setBrush(fill);
++
++    QFont inner = font();
++    inner.setPixelSize(qRound(kInnerPx));
++    inner.setBold(true);
++    QFont caption = font();
++    caption.setPixelSize(qRound(kCaptionPx));
++    const QColor innerColor = assigned && !photo ? token(this, "color.background.0")
++                                                 : token(this, "color.text.primary");
++
++    switch (c.shape) {
++    case MidiLayoutControl::Shape::Key:
++    case MidiLayoutControl::Shape::Pill: {
++        const QRectF r = c.hitRect();
++        p.drawRoundedRect(r, 7, 7);
++        paintText(p, QPointF(r.center().x(), r.center().y() + kInnerPx * 0.35), c.label, inner,
++                  innerColor, photo);
++        break;
++    }
++    case MidiLayoutControl::Shape::Knob: {
++        p.drawEllipse(c.center, c.radius, c.radius);
++        p.setPen(QPen(token(this, "color.text.primary"), 3, Qt::SolidLine, Qt::RoundCap));
++        p.drawLine(QPointF(c.center.x(), c.center.y() - c.radius + 5),
++                   QPointF(c.center.x(), c.center.y() - c.radius / 3.0));
++        if (!c.caption.isEmpty())
++            paintText(p, QPointF(c.center.x(), c.center.y() + c.radius + kCaptionPx + 4), c.caption,
++                      caption, token(this, "color.text.label"), photo);
++        break;
++    }
++    case MidiLayoutControl::Shape::Jog: {
++        p.drawEllipse(c.center, c.radius, c.radius);
++        if (!photo) {
++            p.setPen(QPen(token(this, "color.border.strong"), 1.5));
++            p.setBrush(Qt::NoBrush);
++            p.drawEllipse(c.center, c.radius * 0.62, c.radius * 0.62);
++        }
++        paintText(p, QPointF(c.center.x(), c.center.y() + c.radius * 0.84), QStringLiteral("JOG"),
++                  inner, innerColor, photo);
++        break;
++    }
++    case MidiLayoutControl::Shape::Fader: {
++        if (!photo) {
++            p.save();
++            p.setPen(Qt::NoPen);
++            p.setBrush(token(this, "color.background.0"));
++            p.drawRoundedRect(QRectF(c.center.x() - 3, c.center.y(), 6, c.length), 3, 3);
++            p.restore();
++        }
++        p.drawRoundedRect(QRectF(c.center.x() - 22, c.center.y() + c.length * 0.45 - 14, 44, 28), 4, 4);
++        if (!c.caption.isEmpty())
++            paintText(p, QPointF(c.center.x(), c.center.y() + c.length + 24), c.caption, caption,
++                      token(this, "color.text.label"), photo);
++        break;
++    }
++    case MidiLayoutControl::Shape::Crossfader: {
++        if (!photo) {
++            p.save();
++            p.setPen(Qt::NoPen);
++            p.setBrush(token(this, "color.background.0"));
++            p.drawRoundedRect(QRectF(c.center.x() - c.length / 2.0, c.center.y() - 3, c.length, 6), 3, 3);
++            p.restore();
++        }
++        p.drawRoundedRect(QRectF(c.center.x() - 14, c.center.y() - 22, 28, 44), 4, 4);
++        break;
++    }
++    }
++}
++
++void MidiControllerCanvas::paintLabel(QPainter& p, const MidiLayoutControl& c, const QString& text) const
++{
++    QFont f = font();
++    f.setPixelSize(qRound(kLabelPx));
++    f.setBold(!text.isEmpty());
++    const QRectF hit = c.hitRect();
++    // Room for the label: a little wider than the control, never narrower
++    // than a short word, so neighbouring labels don't run together.
++    const double room = std::max(hit.width() + 26.0, 84.0);
++    const QString shown = text.isEmpty() ? QStringLiteral("—")
++                                         : QFontMetricsF(f).elidedText(text, Qt::ElideRight, room);
++    QColor color = text.isEmpty() ? token(this, "color.text.label") : token(this, "color.accent.bright");
++    if (c.id == m_selected) color = token(this, "color.accent.warning");
++    const double gap = c.shape == MidiLayoutControl::Shape::Jog ? 12.0 : 9.0;
++    paintText(p, QPointF(hit.center().x(), hit.top() - gap), shown, f, color, !m_photo.isNull());
++}
++
++void MidiControllerCanvas::paintText(QPainter& p, const QPointF& baseline, const QString& text,
++                                     const QFont& font, const QColor& color, bool halo) const
++{
++    if (text.isEmpty()) return;
++    const double w = QFontMetricsF(font).horizontalAdvance(text);
++    const QPointF origin(baseline.x() - w / 2.0, baseline.y());
++    if (halo) {
++        // Over a photo, outline the text so it reads on any background.
++        QPainterPath path;
++        path.addText(origin, font, text);
++        p.save();
++        p.setPen(QPen(theme::withAlpha(this, "color.background.0", 220), 4.0,
++                      Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
++        p.setBrush(Qt::NoBrush);
++        p.drawPath(path);
++        p.fillPath(path, color);
++        p.restore();
++        return;
++    }
++    p.save();
++    p.setFont(font);
++    p.setPen(color);
++    p.drawText(origin, text);
++    p.restore();
++}
++
++} // namespace AetherSDR
++
++#endif // HAVE_MIDI
+diff --git a/src/gui/MidiControllerCanvas.h b/src/gui/MidiControllerCanvas.h
+new file mode 100644
+index 0000000..47bbd22
+--- /dev/null
++++ b/src/gui/MidiControllerCanvas.h
+@@ -0,0 +1,90 @@
++#pragma once
++
++#ifdef HAVE_MIDI
++
++#include "core/MidiControllerLayout.h"
++
++#include <QPixmap>
++#include <QTimer>
++#include <QWidget>
++
++#include <functional>
++
++namespace AetherSDR {
++
++// Draws a MIDI controller's surface from a MidiControllerLayout and lets the
++// operator click a control. Each control shows the function it is bound to
++// just above it, so the whole mapping reads at a glance. An optional photo of
++// the controller can sit behind the drawing.
++//
++// The canvas owns no binding state: the dialog supplies a label provider and
++// reacts to controlClicked().
++class MidiControllerCanvas : public QWidget {
++    Q_OBJECT
++
++public:
++    explicit MidiControllerCanvas(QWidget* parent = nullptr);
++
++    // Non-owning; the caller keeps the layout alive while it is set.
++    void setControllerLayout(const MidiControllerLayout* layout);
++
++    // Visible bank of a banked layout (e.g. the MP3 e2 Loops/Fx keys).
++    void    setBank(const QString& bank);
++    QString bank() const { return m_bank; }
++
++    void    setSelectedControl(const QString& id);
++    QString selectedControl() const { return m_selected; }
++
++    // Returns the bound function's name for a control, or an empty string
++    // when nothing is bound.
++    using LabelProvider = std::function<QString(const MidiLayoutControl&)>;
++    void setLabelProvider(LabelProvider provider);
++
++    void setPhoto(const QPixmap& photo);
++    bool hasPhoto() const { return !m_photo.isNull(); }
++
++    // Briefly rings a control, e.g. when the hardware sends its message.
++    void flashControl(const QString& id);
++
++    QSize sizeHint() const override;
++    QSize minimumSizeHint() const override;
++
++signals:
++    void controlClicked(const QString& id);
++    void bankSwitchClicked();
++
++protected:
++    void paintEvent(QPaintEvent* event) override;
++    void mousePressEvent(QMouseEvent* event) override;
++    void mouseMoveEvent(QMouseEvent* event) override;
++    void leaveEvent(QEvent* event) override;
++    void keyPressEvent(QKeyEvent* event) override;
++
++private:
++    QTransform toWidget() const;
++    QPointF    toLayout(const QPointF& widgetPoint) const;
++    bool       isInCurrentBank(const MidiLayoutControl& c) const;
++    QString    controlAt(const QPointF& widgetPoint) const;
++    int        bankSwitchAt(const QPointF& widgetPoint) const;
++    QVector<const MidiLayoutControl*> visibleControls() const;
++    void       moveSelection(int step);
++    void       updateAccessibleDescription();
++
++    void paintControl(QPainter& p, const MidiLayoutControl& c, bool assigned) const;
++    void paintLabel(QPainter& p, const MidiLayoutControl& c, const QString& text) const;
++    void paintText(QPainter& p, const QPointF& baseline, const QString& text,
++                   const QFont& font, const QColor& color, bool halo) const;
++
++    const MidiControllerLayout* m_layout{nullptr};
++    LabelProvider m_labels;
++    QString m_bank;
++    QString m_selected;
++    QString m_hover;
++    QString m_flash;
++    QPixmap m_photo;
++    QTimer  m_flashTimer;
++};
++
++} // namespace AetherSDR
++
++#endif // HAVE_MIDI
+diff --git a/src/gui/MidiMappingDialog.cpp b/src/gui/MidiMappingDialog.cpp
+index ae56216..b2f9208 100644
+--- a/src/gui/MidiMappingDialog.cpp
++++ b/src/gui/MidiMappingDialog.cpp
+@@ -2,6 +2,7 @@
+ #ifdef HAVE_MIDI
+ 
+ #include "MidiMappingDialog.h"
++#include "MidiVisualMapperDialog.h"
+ #include "core/AppSettings.h"
+ #include "FramelessMessageBox.h"
+ #include "ScopedChildWidget.h"
+@@ -283,6 +284,14 @@ MidiMappingDialog::MidiMappingDialog(MidiControlManager* manager, QWidget* paren
+             MidiSettings::instance().saveBindings(m_manager->bindings());
+         });
+         btnRow->addWidget(clearAllBtn);
++
++        auto* visualBtn = new QPushButton("Visual Mapper…");
++        AetherSDR::ThemeManager::instance().applyStyleSheet(visualBtn, kBtnSubtleStyle);
++        visualBtn->setObjectName(QStringLiteral("midiVisualMapperButton"));
++        visualBtn->setAccessibleName(QStringLiteral("Open the visual MIDI mapper"));
++        visualBtn->setToolTip(QStringLiteral("Map controls by clicking them on a picture of your controller"));
++        connect(visualBtn, &QPushButton::clicked, this, &MidiMappingDialog::openVisualMapper);
++        btnRow->addWidget(visualBtn);
+         btnRow->addStretch();
+ 
+         // Profile management
+@@ -428,6 +437,19 @@ MidiMappingDialog::MidiMappingDialog(MidiControlManager* manager, QWidget* paren
+     }
+ }
+ 
++void MidiMappingDialog::openVisualMapper()
++{
++    if (!m_visualMapper) {
++        m_visualMapper = new MidiVisualMapperDialog(m_manager, this);
++        m_visualMapper->setAttribute(Qt::WA_DeleteOnClose);
++        connect(m_visualMapper, &MidiVisualMapperDialog::bindingsChanged,
++                this, &MidiMappingDialog::refreshBindingTable);
++    }
++    m_visualMapper->show();
++    m_visualMapper->raise();
++    m_visualMapper->activateWindow();
++}
++
+ void MidiMappingDialog::importProfileFromFile()
+ {
+     const QPointer<MidiMappingDialog> self(this);
+@@ -695,6 +717,10 @@ void MidiMappingDialog::showEvent(QShowEvent* event)
+ 
+ void MidiMappingDialog::refreshBindingTable()
+ {
++    // Every table rebuild follows a binding change, so the picture view
++    // re-reads them here too and the two views can't disagree.
++    if (m_visualMapper) m_visualMapper->refresh();
++
+     const auto& bindings = m_manager->bindings();
+     m_bindingTable->setRowCount(bindings.size());
+ 
+diff --git a/src/gui/MidiMappingDialog.h b/src/gui/MidiMappingDialog.h
+index 7c882c5..38317eb 100644
+--- a/src/gui/MidiMappingDialog.h
++++ b/src/gui/MidiMappingDialog.h
+@@ -7,11 +7,13 @@
+ #include <QTableWidget>
+ #include <QComboBox>
+ #include <QLabel>
++#include <QPointer>
+ #include <QPushButton>
+ 
+ namespace AetherSDR {
+ 
+ class MidiControlManager;
++class MidiVisualMapperDialog;
+ struct MidiBinding;
+ 
+ // MIDI Mapping dialog — dedicated settings window for configuring MIDI
+@@ -52,6 +54,8 @@ private:
+     // Export writes the current bindings as a shareable profile XML.
+     void importProfileFromFile();
+     void exportProfileToFile();
++    // Opens (or raises) the picture-based mapper (MidiVisualMapperDialog).
++    void openVisualMapper();
+ 
+     MidiControlManager* m_manager;
+ 
+@@ -63,6 +67,7 @@ private:
+     QComboBox*    m_paramCombo;
+     QComboBox*    m_categoryCombo;
+     QComboBox*    m_profileCombo;
++    QPointer<MidiVisualMapperDialog> m_visualMapper;
+ };
+ 
+ } // namespace AetherSDR
+diff --git a/src/gui/MidiVisualMapperDialog.cpp b/src/gui/MidiVisualMapperDialog.cpp
+new file mode 100644
+index 0000000..e8606c4
+--- /dev/null
++++ b/src/gui/MidiVisualMapperDialog.cpp
+@@ -0,0 +1,652 @@
++#include "MidiVisualMapperDialog.h"
++
++#ifdef HAVE_MIDI
++
++#include "FramelessMessageBox.h"
++#include "MidiControllerCanvas.h"
++#include "core/AppSettings.h"
++#include "core/MidiControlManager.h"
++#include "core/MidiSettings.h"
++#include "core/ThemeManager.h"
++
++#include <QButtonGroup>
++#include <QCheckBox>
++#include <QComboBox>
++#include <QDir>
++#include <QFile>
++#include <QFileDialog>
++#include <QFileInfo>
++#include <QHBoxLayout>
++#include <QImage>
++#include <QImageReader>
++#include <QLabel>
++#include <QLineEdit>
++#include <QListWidget>
++#include <QPushButton>
++#include <QSaveFile>
++#include <QSignalBlocker>
++#include <QStandardPaths>
++#include <QVBoxLayout>
++
++#include <algorithm>
++
++namespace AetherSDR {
++
++namespace {
++
++const QString kLayoutKey = QStringLiteral("MidiVisualMapperLayout");
++constexpr int kParamRole = Qt::UserRole + 1;
++constexpr int kMaxPhotoEdge = 2400;
++
++// {{token}} templates: apply via ThemeManager::applyStyleSheet.
++const QString kPanelStyle =
++    "QLabel { color: {{color.text.primary}}; }"
++    "QLabel#midiVmHint, QLabel#midiVmSource { color: {{color.text.secondary}}; }"
++    "QLabel#midiVmTitle { font-size: 15px; font-weight: bold; }"
++    "QLabel#midiVmFunction { background: {{color.background.1}}; border: 1px solid {{color.border.strong}}; "
++    "  border-radius: 4px; padding: 6px 8px; }"
++    "QCheckBox { color: {{color.text.primary}}; }"
++    "QLineEdit { background: {{color.background.1}}; color: {{color.text.primary}}; "
++    "  border: 1px solid {{color.border.strong}}; border-radius: 3px; padding: 4px 6px; }"
++    "QListWidget { background: {{color.background.0}}; color: {{color.text.primary}}; "
++    "  border: 1px solid {{color.border.strong}}; }"
++    "QListWidget::item { padding: 3px 6px; }"
++    "QListWidget::item:selected { background: {{color.accent.dim}}; color: {{color.text.primary}}; }"
++    "QComboBox { background: {{color.background.1}}; color: {{color.text.primary}}; "
++    "  border: 1px solid {{color.border.strong}}; border-radius: 3px; padding: 2px 6px; }"
++    "QPushButton { background: {{color.background.1}}; color: {{color.text.primary}}; "
++    "  border: 1px solid {{color.border.strong}}; padding: 4px 10px; border-radius: 3px; }"
++    "QPushButton:hover { background: {{color.background.2}}; }"
++    "QPushButton:checked { background: {{color.accent}}; color: {{color.background.0}}; "
++    "  border-color: {{color.accent}}; font-weight: bold; }";
++
++const QString kStatusOk = "QLabel { color: {{color.text.secondary}}; }";
++const QString kStatusProblem = "QLabel { color: {{color.accent.danger}}; }";
++
++bool sourceMatches(const MidiBinding& b, const MidiLayoutControl& c)
++{
++    if (b.number != c.number) return false;
++    if (c.message == MidiLayoutControl::Message::ControlChange)
++        return b.msgType == MidiBinding::CC;
++    return b.msgType == MidiBinding::NoteOn || b.msgType == MidiBinding::NoteOff;
++}
++
++QString sourceText(const MidiLayoutControl& c)
++{
++    const QString hex = QStringLiteral("0x%1").arg(c.number, 2, 16, QLatin1Char('0')).toUpper().replace("0X", "0x");
++    if (c.message == MidiLayoutControl::Message::ControlChange) {
++        return c.kind == MidiLayoutControl::Kind::Encoder
++            ? QStringLiteral("Control Change %1 (%2), endless: 1 = right, 127 = left").arg(hex).arg(c.number)
++            : QStringLiteral("Control Change %1 (%2), 0–127").arg(hex).arg(c.number);
++    }
++    return QStringLiteral("Note %1 (%2), press and release").arg(hex).arg(c.number);
++}
++
++} // namespace
++
++MidiVisualMapperDialog::MidiVisualMapperDialog(MidiControlManager* manager, QWidget* parent)
++    : PersistentDialog(QStringLiteral("MIDI Visual Mapper"), QStringLiteral("MidiVisualMapperGeometry"), parent),
++      m_manager(manager)
++{
++    theme::setContainer(this, QStringLiteral("dialog/midiVisualMapper"));
++    setObjectName(QStringLiteral("midiVisualMapperDialog"));
++    setMinimumSize(900, 520);
++    ThemeManager::instance().applyStyleSheet(this, "QDialog { background: {{color.background.0}}; }");
++
++    auto* root = new QHBoxLayout(bodyWidget());
++    root->setSpacing(10);
++
++    // ── Left: controller picture ────────────────────────────────────────
++    auto* left = new QVBoxLayout;
++    left->setSpacing(6);
++    auto* top = new QHBoxLayout;
++    top->setSpacing(6);
++    auto* layoutLabel = new QLabel(QStringLiteral("Controller:"));
++    top->addWidget(layoutLabel);
++    m_layoutCombo = new QComboBox;
++    m_layoutCombo->setObjectName(QStringLiteral("midiVmLayoutCombo"));
++    m_layoutCombo->setAccessibleName(QStringLiteral("Controller layout"));
++    layoutLabel->setBuddy(m_layoutCombo);
++    top->addWidget(m_layoutCombo, 1);
++
++    m_bankRow = new QHBoxLayout;
++    m_bankRow->setSpacing(0);
++    m_bankGroup = new QButtonGroup(this);
++    m_bankGroup->setExclusive(true);
++    top->addLayout(m_bankRow);
++
++    m_photoBtn = new QPushButton(QStringLiteral("Photo…"));
++    m_photoBtn->setObjectName(QStringLiteral("midiVmPhotoButton"));
++    m_photoBtn->setToolTip(QStringLiteral("Show a photo of your controller behind the drawing. "
++                                          "Crop it to the controller's edges, taken straight from above."));
++    connect(m_photoBtn, &QPushButton::clicked, this, &MidiVisualMapperDialog::choosePhoto);
++    top->addWidget(m_photoBtn);
++    m_removePhotoBtn = new QPushButton(QStringLiteral("Remove photo"));
++    m_removePhotoBtn->setObjectName(QStringLiteral("midiVmRemovePhotoButton"));
++    connect(m_removePhotoBtn, &QPushButton::clicked, this, &MidiVisualMapperDialog::removePhoto);
++    top->addWidget(m_removePhotoBtn);
++    left->addLayout(top);
++
++    m_canvas = new MidiControllerCanvas;
++    m_canvas->setLabelProvider([this](const MidiLayoutControl& c) { return functionNameFor(c); });
++    connect(m_canvas, &MidiControllerCanvas::controlClicked, this, &MidiVisualMapperDialog::selectControl);
++    connect(m_canvas, &MidiControllerCanvas::bankSwitchClicked, this, &MidiVisualMapperDialog::cycleBank);
++    left->addWidget(m_canvas, 1);
++
++    auto* bottom = new QHBoxLayout;
++    m_followHardware = new QCheckBox(QStringLiteral("Select a control by touching it on the controller"));
++    m_followHardware->setObjectName(QStringLiteral("midiVmFollowHardware"));
++    m_followHardware->setChecked(true);
++    m_followHardware->setToolTip(QStringLiteral(
++        "Press a button or move a knob to select it here. The control still does its current "
++        "job while you touch it, so mind anything bound to MOX or TUNE."));
++    bottom->addWidget(m_followHardware);
++    bottom->addStretch();
++    left->addLayout(bottom);
++    m_status = new QLabel;
++    m_status->setObjectName(QStringLiteral("midiVmStatus"));
++    m_status->setWordWrap(true);
++    left->addWidget(m_status);
++    root->addLayout(left, 1);
++
++    // ── Right: what the selected control does ───────────────────────────
++    auto* panel = new QWidget;
++    panel->setObjectName(QStringLiteral("midiVmPanel"));
++    panel->setFixedWidth(310);
++    auto* pv = new QVBoxLayout(panel);
++    pv->setContentsMargins(0, 0, 0, 0);
++    pv->setSpacing(6);
++    m_selName = new QLabel(QStringLiteral("Pick a control"));
++    m_selName->setObjectName(QStringLiteral("midiVmTitle"));
++    m_selName->setWordWrap(true);
++    pv->addWidget(m_selName);
++    m_selSource = new QLabel(QStringLiteral("Click a knob, fader, wheel or button in the picture."));
++    m_selSource->setObjectName(QStringLiteral("midiVmSource"));
++    m_selSource->setWordWrap(true);
++    pv->addWidget(m_selSource);
++    m_selFunction = new QLabel;
++    m_selFunction->setObjectName(QStringLiteral("midiVmFunction"));
++    m_selFunction->setWordWrap(true);
++    pv->addWidget(m_selFunction);
++
++    auto* opts = new QHBoxLayout;
++    m_invert = new QCheckBox(QStringLiteral("Reverse direction"));
++    m_invert->setObjectName(QStringLiteral("midiVmInvert"));
++    m_invert->setAccessibleDescription(QStringLiteral(
++        "Available for an assigned knob, fader or wheel; buttons have no direction."));
++    connect(m_invert, &QCheckBox::toggled, this, &MidiVisualMapperDialog::setSelectedInverted);
++    opts->addWidget(m_invert);
++    opts->addStretch();
++    m_unassign = new QPushButton(QStringLiteral("Unassign"));
++    m_unassign->setObjectName(QStringLiteral("midiVmUnassign"));
++    m_unassign->setAccessibleDescription(QStringLiteral("Available when the selected control has a function."));
++    connect(m_unassign, &QPushButton::clicked, this, &MidiVisualMapperDialog::unassignSelected);
++    opts->addWidget(m_unassign);
++    pv->addLayout(opts);
++
++    m_search = new QLineEdit;
++    m_search->setObjectName(QStringLiteral("midiVmSearch"));
++    m_search->setPlaceholderText(QStringLiteral("Search functions (band, NR, MOX…)"));
++    m_search->setAccessibleName(QStringLiteral("Search functions"));
++    m_search->setClearButtonEnabled(true);
++    connect(m_search, &QLineEdit::textChanged, this, &MidiVisualMapperDialog::rebuildFunctionList);
++    pv->addWidget(m_search);
++
++    m_functions = new QListWidget;
++    m_functions->setObjectName(QStringLiteral("midiVmFunctions"));
++    m_functions->setAccessibleName(QStringLiteral("Functions for the selected control"));
++    m_functions->setUniformItemSizes(false);
++    // One click assigns — the list only offers functions this control can drive.
++    connect(m_functions, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
++        const QString id = item->data(kParamRole).toString();
++        if (!id.isEmpty()) assignFunction(id);
++    });
++    connect(m_functions, &QListWidget::itemActivated, this, [this](QListWidgetItem* item) {
++        const QString id = item->data(kParamRole).toString();
++        if (!id.isEmpty()) assignFunction(id);
++    });
++    pv->addWidget(m_functions, 1);
++
++    auto* hint = new QLabel(QStringLiteral(
++        "Each function can sit on one control: picking one that's already used moves it here. "
++        "Changes are saved at once and show in the MIDI Mapping table."));
++    hint->setObjectName(QStringLiteral("midiVmHint"));
++    hint->setWordWrap(true);
++    pv->addWidget(hint);
++    root->addWidget(panel);
++
++    ThemeManager::instance().applyStyleSheet(bodyWidget(), kPanelStyle);
++    ThemeManager::instance().applyStyleSheet(m_status, kStatusOk);
++
++    connect(m_manager, &MidiControlManager::midiActivity, this, &MidiVisualMapperDialog::onMidiActivity);
++    connect(m_layoutCombo, qOverload<int>(&QComboBox::currentIndexChanged), this,
++            &MidiVisualMapperDialog::showLayout);
++
++    populateLayouts();
++    updateSelectionPanel();
++}
++
++// ── Layouts ─────────────────────────────────────────────────────────────────
++
++void MidiVisualMapperDialog::populateLayouts()
++{
++    const QSignalBlocker block(m_layoutCombo);
++    m_layoutCombo->clear();
++    m_layoutFiles.clear();
++    QStringList broken;
++    for (const QString& file : availableMidiControllerLayoutFiles()) {
++        const MidiLayoutLoadResult r = loadMidiControllerLayout(file);
++        if (!r.ok()) {
++            broken << QStringLiteral("%1: %2").arg(QFileInfo(file).fileName(), r.error);
++            continue;
++        }
++        m_layoutFiles.append(file);
++        m_layoutCombo->addItem(r.layout.name, r.layout.id);
++    }
++    if (!broken.isEmpty())
++        setStatus(QStringLiteral("Skipped layout files with problems — %1").arg(broken.join(QStringLiteral("; "))), true);
++
++    if (m_layoutFiles.isEmpty()) {
++        m_canvas->setControllerLayout(nullptr);
++        return;
++    }
++    const QString wanted = AppSettings::instance().value(kLayoutKey, QString()).toString();
++    int index = m_layoutCombo->findData(wanted);
++    if (index < 0) index = 0;
++    m_layoutCombo->setCurrentIndex(index);
++    showLayout(index);
++}
++
++void MidiVisualMapperDialog::showLayout(int comboIndex)
++{
++    if (comboIndex < 0 || comboIndex >= m_layoutFiles.size()) return;
++    const MidiLayoutLoadResult r = loadMidiControllerLayout(m_layoutFiles.at(comboIndex));
++    if (!r.ok()) {
++        setStatus(r.error, true);
++        return;
++    }
++    m_layout = r.layout;
++    m_selectedId.clear();
++    m_canvas->setControllerLayout(&m_layout);
++    AppSettings::instance().setValue(kLayoutKey, m_layout.id);
++    rebuildBankButtons();
++    loadPhoto();
++    updateSelectionPanel();
++    if (m_status->text().isEmpty() || !m_status->property("problem").toBool())
++        setStatus(QStringLiteral("Click a control in the picture, or touch it on the controller."));
++}
++
++void MidiVisualMapperDialog::rebuildBankButtons()
++{
++    for (auto* b : m_bankGroup->buttons()) {
++        m_bankGroup->removeButton(b);
++        b->deleteLater();
++    }
++    if (m_layout.banks.size() < 2) return;
++    for (const auto& bank : m_layout.banks) {
++        auto* b = new QPushButton(bank.label);
++        b->setCheckable(true);
++        b->setProperty("bankId", bank.id);
++        b->setAccessibleName(QStringLiteral("Show %1").arg(bank.label));
++        b->setChecked(bank.id == m_canvas->bank());
++        connect(b, &QPushButton::clicked, this, [this, id = bank.id] { setBank(id); });
++        m_bankGroup->addButton(b);
++        m_bankRow->addWidget(b);
++    }
++}
++
++void MidiVisualMapperDialog::setBank(const QString& bank)
++{
++    m_canvas->setBank(bank);
++    for (auto* b : m_bankGroup->buttons())
++        b->setChecked(b->property("bankId").toString() == bank);
++    // Keep the selection on the same physical key in the other bank.
++    const auto* c = selectedControl();
++    if (c && !c->bank.isEmpty() && c->bank != bank) {
++        for (const auto& other : m_layout.controls) {
++            if (other.bank == bank && other.center == c->center) {
++                selectControl(other.id);
++                return;
++            }
++        }
++        selectControl(QString());
++    }
++}
++
++void MidiVisualMapperDialog::cycleBank()
++{
++    if (m_layout.banks.size() < 2) return;
++    int at = 0;
++    for (int i = 0; i < m_layout.banks.size(); ++i)
++        if (m_layout.banks.at(i).id == m_canvas->bank()) at = i;
++    setBank(m_layout.banks.at((at + 1) % m_layout.banks.size()).id);
++}
++
++// ── Selection ───────────────────────────────────────────────────────────────
++
++const MidiLayoutControl* MidiVisualMapperDialog::selectedControl() const
++{
++    return m_selectedId.isEmpty() ? nullptr : m_layout.findById(m_selectedId);
++}
++
++void MidiVisualMapperDialog::selectControl(const QString& id)
++{
++    m_selectedId = id;
++    m_canvas->setSelectedControl(id);
++    m_search->clear();
++    updateSelectionPanel();
++}
++
++void MidiVisualMapperDialog::updateSelectionPanel()
++{
++    const auto* c = selectedControl();
++    const bool has = c != nullptr;
++    m_search->setEnabled(has);
++    m_functions->setEnabled(has);
++    if (!has) {
++        m_selName->setText(QStringLiteral("Pick a control"));
++        m_selSource->setText(QStringLiteral("Click a knob, fader, wheel or button in the picture."));
++        m_selFunction->setText(QStringLiteral("Nothing selected"));
++        m_invert->setEnabled(false);
++        m_unassign->setEnabled(false);
++        m_functions->clear();
++        return;
++    }
++    m_selName->setText(c->name);
++    m_selSource->setText(sourceText(*c));
++    const int bi = bindingIndexFor(*c);
++    const QString fn = functionNameFor(*c);
++    m_selFunction->setText(fn.isEmpty() ? QStringLiteral("Not assigned") : fn);
++    {
++        const QSignalBlocker block(m_invert);
++        m_invert->setChecked(bi >= 0 && m_manager->bindings().at(bi).inverted);
++    }
++    // Reversing only means something for knobs, faders and wheels.
++    m_invert->setEnabled(bi >= 0 && c->kind != MidiLayoutControl::Kind::Button);
++    m_unassign->setEnabled(bi >= 0);
++    rebuildFunctionList();
++}
++
++void MidiVisualMapperDialog::rebuildFunctionList()
++{
++    m_functions->clear();
++    const auto* c = selectedControl();
++    if (!c) return;
++    const QString query = m_search->text().trimmed();
++    const int bi = bindingIndexFor(*c);
++    const QString current = bi >= 0 ? m_manager->bindings().at(bi).paramId : QString();
++
++    QString lastCategory;
++    QListWidgetItem* currentItem = nullptr;
++    for (const auto& p : m_manager->params()) {
++        if (!accepts(*c, p)) continue;
++        if (!query.isEmpty()
++            && !p.displayName.contains(query, Qt::CaseInsensitive)
++            && !p.id.contains(query, Qt::CaseInsensitive)
++            && !p.category.contains(query, Qt::CaseInsensitive))
++            continue;
++        if (p.category != lastCategory) {
++            auto* header = new QListWidgetItem(p.category.toUpper(), m_functions);
++            header->setFlags(Qt::NoItemFlags);
++            QFont f = header->font();
++            f.setBold(true);
++            if (f.pointSizeF() > 0) f.setPointSizeF(f.pointSizeF() * 0.85);
++            header->setFont(f);
++            lastCategory = p.category;
++        }
++        QString text = p.displayName;
++        const QString usedOn = controlNameForParam(p.id);
++        if (!usedOn.isEmpty() && p.id != current)
++            text += QStringLiteral("   · on %1").arg(usedOn);
++        auto* item = new QListWidgetItem(text, m_functions);
++        item->setData(kParamRole, p.id);
++        item->setToolTip(p.id);
++        if (p.id == current) {
++            QFont f = item->font();
++            f.setBold(true);
++            item->setFont(f);
++            currentItem = item;
++        }
++    }
++    if (m_functions->count() == 0) {
++        auto* none = new QListWidgetItem(QStringLiteral("No matching function for this kind of control."), m_functions);
++        none->setFlags(Qt::NoItemFlags);
++    }
++    if (currentItem) {
++        m_functions->setCurrentItem(currentItem);
++        m_functions->scrollToItem(currentItem);
++    }
++}
++
++// ── Binding lookups ─────────────────────────────────────────────────────────
++
++int MidiVisualMapperDialog::bindingIndexFor(const MidiLayoutControl& c) const
++{
++    const auto& bs = m_manager->bindings();
++    for (int i = 0; i < bs.size(); ++i)
++        if (sourceMatches(bs.at(i), c)) return i;
++    return -1;
++}
++
++QString MidiVisualMapperDialog::functionNameFor(const MidiLayoutControl& c) const
++{
++    const int bi = bindingIndexFor(c);
++    if (bi < 0) return {};
++    const QString id = m_manager->bindings().at(bi).paramId;
++    const MidiParam* p = m_manager->findParam(id);
++    return p ? p->displayName : id;
++}
++
++QString MidiVisualMapperDialog::controlNameForParam(const QString& paramId) const
++{
++    for (const auto& b : m_manager->bindings()) {
++        if (b.paramId != paramId) continue;
++        const auto msg = b.msgType == MidiBinding::CC ? MidiLayoutControl::Message::ControlChange
++                                                      : MidiLayoutControl::Message::Note;
++        if (b.msgType == MidiBinding::PitchBend) return QStringLiteral("pitch bend");
++        const auto* c = m_layout.findBySource(msg, b.number);
++        return c ? c->name : b.sourceDisplayName();
++    }
++    return {};
++}
++
++bool MidiVisualMapperDialog::accepts(const MidiLayoutControl& c, const MidiParam& param) const
++{
++    const bool vfo = MidiControlManager::isVfoTuneKnob(param.id);
++    switch (c.kind) {
++    case MidiLayoutControl::Kind::Button:
++        return param.type == MidiParamType::Toggle || param.type == MidiParamType::Trigger
++            || param.type == MidiParamType::Gate;
++    case MidiLayoutControl::Kind::Absolute:
++        return param.type == MidiParamType::Slider && !vfo;
++    case MidiLayoutControl::Kind::Encoder:
++        // AetherSDR decodes endless (relative) wheels only for VFO tuning.
++        return vfo;
++    }
++    return false;
++}
++
++// ── Editing ─────────────────────────────────────────────────────────────────
++
++void MidiVisualMapperDialog::assignFunction(const QString& paramId)
++{
++    const auto* c = selectedControl();
++    if (!c) return;
++    const MidiParam* param = m_manager->findParam(paramId);
++    if (!param || !accepts(*c, *param)) return;
++
++    // Where the function lived before, so the move can be named.
++    QString movedFrom = controlNameForParam(paramId);
++    if (movedFrom == c->name) movedFrom.clear();
++
++    // A control drives one function: drop whatever this control did before,
++    // keeping its channel (a learned binding may name one) and, when the
++    // function is unchanged, its direction.
++    auto& bs = m_manager->bindings();
++    int channel = -1;
++    bool inverted = false;
++    for (int i = bs.size() - 1; i >= 0; --i) {
++        if (!sourceMatches(bs.at(i), *c)) continue;
++        channel = bs.at(i).channel;
++        if (bs.at(i).paramId == paramId) inverted = bs.at(i).inverted;
++        bs.removeAt(i);
++    }
++    m_manager->rebuildIndex();
++
++    MidiBinding b;
++    b.channel  = channel;
++    b.msgType  = c->message == MidiLayoutControl::Message::ControlChange ? MidiBinding::CC
++                                                                         : MidiBinding::NoteOn;
++    b.number   = c->number;
++    b.paramId  = paramId;
++    b.inverted = inverted;
++    b.relative = c->message == MidiLayoutControl::Message::ControlChange
++                 && MidiControlManager::isVfoTuneKnob(paramId);
++    // addBinding() removes any other binding of this function: one function,
++    // one control — the same rule the MIDI Mapping table follows.
++    m_manager->addBinding(b);
++
++    commit(movedFrom.isEmpty()
++               ? QStringLiteral("%1 → %2").arg(c->name, param->displayName)
++               : QStringLiteral("%1 moved here from %2.").arg(param->displayName, movedFrom));
++}
++
++void MidiVisualMapperDialog::unassignSelected()
++{
++    const auto* c = selectedControl();
++    if (!c) return;
++    auto& bs = m_manager->bindings();
++    for (int i = bs.size() - 1; i >= 0; --i)
++        if (sourceMatches(bs.at(i), *c)) bs.removeAt(i);
++    m_manager->rebuildIndex();
++    commit(QStringLiteral("%1 cleared.").arg(c->name));
++}
++
++void MidiVisualMapperDialog::setSelectedInverted(bool inverted)
++{
++    const auto* c = selectedControl();
++    if (!c) return;
++    const int bi = bindingIndexFor(*c);
++    if (bi < 0) return;
++    m_manager->bindings()[bi].inverted = inverted;
++    m_manager->rebuildIndex();
++    commit(inverted ? QStringLiteral("%1 reversed.").arg(c->name)
++                    : QStringLiteral("%1 back to normal direction.").arg(c->name));
++}
++
++bool MidiVisualMapperDialog::commit(const QString& message)
++{
++    const bool saved = MidiSettings::instance().saveBindings(m_manager->bindings());
++    m_canvas->update();
++    updateSelectionPanel();
++    emit bindingsChanged();
++    if (!saved) {
++        setStatus(QStringLiteral("The change is active but couldn't be saved — check that %1 is writable.")
++                      .arg(QDir::toNativeSeparators(MidiSettings::profileDir())), true);
++        return false;
++    }
++    setStatus(message);
++    return true;
++}
++
++void MidiVisualMapperDialog::refresh()
++{
++    m_canvas->update();
++    updateSelectionPanel();
++}
++
++void MidiVisualMapperDialog::setStatus(const QString& text, bool problem)
++{
++    m_status->setText(text);
++    m_status->setProperty("problem", problem);
++    ThemeManager::instance().applyStyleSheet(m_status, problem ? kStatusProblem : kStatusOk);
++}
++
++// ── Photo ───────────────────────────────────────────────────────────────────
++
++QString MidiVisualMapperDialog::photoPath() const
++{
++    return midiLayoutUserDir() + QStringLiteral("/%1-photo.png").arg(m_layout.id);
++}
++
++void MidiVisualMapperDialog::loadPhoto()
++{
++    QPixmap photo;
++    if (!m_layout.id.isEmpty() && QFileInfo::exists(photoPath()))
++        photo.load(photoPath());
++    m_canvas->setPhoto(photo);
++    m_removePhotoBtn->setEnabled(!photo.isNull());
++}
++
++void MidiVisualMapperDialog::choosePhoto()
++{
++    if (m_layout.id.isEmpty()) return;
++    const QString pictures = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
++    const QString file = QFileDialog::getOpenFileName(
++        this, QStringLiteral("Choose a photo of your controller"),
++        pictures.isEmpty() ? QDir::homePath() : pictures,
++        QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.webp)"));
++    if (file.isEmpty()) return;
++
++    QImageReader reader(file);
++    reader.setAutoTransform(true);  // honour phone-camera rotation
++    QImage image = reader.read();
++    if (image.isNull()) {
++        FramelessMessageBox::warning(this, QStringLiteral("Controller photo"),
++            QStringLiteral("Couldn't open %1 as an image: %2")
++                .arg(QFileInfo(file).fileName(), reader.errorString()));
++        return;
++    }
++    if (std::max(image.width(), image.height()) > kMaxPhotoEdge)
++        image = image.scaled(kMaxPhotoEdge, kMaxPhotoEdge, Qt::KeepAspectRatio, Qt::SmoothTransformation);
++
++    QDir().mkpath(midiLayoutUserDir());
++    QSaveFile out(photoPath());
++    if (!out.open(QIODevice::WriteOnly) || !image.save(&out, "PNG") || !out.commit()) {
++        FramelessMessageBox::warning(this, QStringLiteral("Controller photo"),
++            QStringLiteral("Couldn't save the photo to %1.")
++                .arg(QDir::toNativeSeparators(midiLayoutUserDir())));
++        return;
++    }
++    loadPhoto();
++    setStatus(QStringLiteral("Photo added. For the best fit, crop it to the controller's edges."));
++}
++
++void MidiVisualMapperDialog::removePhoto()
++{
++    if (QFileInfo::exists(photoPath()) && !QFile::remove(photoPath())) {
++        setStatus(QStringLiteral("Couldn't remove %1.").arg(QDir::toNativeSeparators(photoPath())), true);
++        return;
++    }
++    loadPhoto();
++    setStatus(QStringLiteral("Photo removed."));
++}
++
++// ── Hardware follow ─────────────────────────────────────────────────────────
++
++void MidiVisualMapperDialog::onMidiActivity(int /*channel*/, int type, int number, int value)
++{
++    if (!isVisible() || !m_followHardware->isChecked() || m_manager->isLearning()) return;
++    MidiLayoutControl::Message msg;
++    if (type == MidiBinding::CC) msg = MidiLayoutControl::Message::ControlChange;
++    else if (type == MidiBinding::NoteOn && value > 0) msg = MidiLayoutControl::Message::Note;
++    else return;  // releases and pitch bend don't select anything
++
++    const auto* c = m_layout.findBySource(msg, number);
++    if (!c) {
++        setStatus(QStringLiteral("Received %1 %2, which isn't a control in this layout.")
++                      .arg(msg == MidiLayoutControl::Message::ControlChange ? QStringLiteral("CC")
++                                                                            : QStringLiteral("note"))
++                      .arg(number));
++        return;
++    }
++    if (!c->bank.isEmpty() && c->bank != m_canvas->bank())
++        setBank(c->bank);
++    if (c->id != m_selectedId)
++        selectControl(c->id);
++    m_canvas->flashControl(c->id);
++}
++
++} // namespace AetherSDR
++
++#endif // HAVE_MIDI
+diff --git a/src/gui/MidiVisualMapperDialog.h b/src/gui/MidiVisualMapperDialog.h
+new file mode 100644
+index 0000000..db98a04
+--- /dev/null
++++ b/src/gui/MidiVisualMapperDialog.h
+@@ -0,0 +1,100 @@
++#pragma once
++
++#ifdef HAVE_MIDI
++
++#include "PersistentDialog.h"
++#include "core/MidiControllerLayout.h"
++
++#include <QVector>
++
++class QButtonGroup;
++class QCheckBox;
++class QComboBox;
++class QHBoxLayout;
++class QLabel;
++class QLineEdit;
++class QListWidget;
++class QListWidgetItem;
++class QPushButton;
++
++namespace AetherSDR {
++
++class MidiControlManager;
++class MidiControllerCanvas;
++struct MidiBinding;
++struct MidiParam;
++
++// Visual MIDI mapper: shows a picture of the controller with the function
++// bound to every knob, fader, wheel and button written above it. Click a
++// control (or touch it on the hardware) and pick its function from the list.
++// Changes go straight into the live bindings and midi.settings, the same
++// store the MIDI Mapping table edits, so the two views always agree.
++// Opened from the MIDI Mapping dialog's "Visual Mapper…" button.
++class MidiVisualMapperDialog : public PersistentDialog {
++    Q_OBJECT
++
++public:
++    explicit MidiVisualMapperDialog(MidiControlManager* manager, QWidget* parent = nullptr);
++
++    // Re-read the bindings after another view changed them.
++    void refresh();
++
++signals:
++    // Emitted after this window changed and saved the bindings.
++    void bindingsChanged();
++
++private:
++    void populateLayouts();
++    void showLayout(int comboIndex);
++    void rebuildBankButtons();
++    void setBank(const QString& bank);
++    void cycleBank();
++    void selectControl(const QString& id);
++    void updateSelectionPanel();
++    void rebuildFunctionList();
++
++    void assignFunction(const QString& paramId);
++    void unassignSelected();
++    void setSelectedInverted(bool inverted);
++    bool commit(const QString& message);
++    void setStatus(const QString& text, bool problem = false);
++
++    void choosePhoto();
++    void removePhoto();
++    void loadPhoto();
++    QString photoPath() const;
++
++    void onMidiActivity(int channel, int type, int number, int value);
++
++    const MidiLayoutControl* selectedControl() const;
++    int  bindingIndexFor(const MidiLayoutControl& c) const;
++    QString functionNameFor(const MidiLayoutControl& c) const;
++    QString controlNameForParam(const QString& paramId) const;
++    bool accepts(const MidiLayoutControl& c, const MidiParam& param) const;
++
++    MidiControlManager* m_manager;
++    QVector<QString>     m_layoutFiles;
++    MidiControllerLayout m_layout;
++    QString              m_selectedId;
++
++    QComboBox*            m_layoutCombo{nullptr};
++    QHBoxLayout*          m_bankRow{nullptr};
++    QButtonGroup*         m_bankGroup{nullptr};
++    QPushButton*          m_photoBtn{nullptr};
++    QPushButton*          m_removePhotoBtn{nullptr};
++    QCheckBox*            m_followHardware{nullptr};
++    MidiControllerCanvas* m_canvas{nullptr};
++    QLabel*               m_status{nullptr};
++
++    QLabel*      m_selName{nullptr};
++    QLabel*      m_selSource{nullptr};
++    QLabel*      m_selFunction{nullptr};
++    QLineEdit*   m_search{nullptr};
++    QListWidget* m_functions{nullptr};
++    QCheckBox*   m_invert{nullptr};
++    QPushButton* m_unassign{nullptr};
++};
++
++} // namespace AetherSDR
++
++#endif // HAVE_MIDI
+diff --git a/tests/midi_controller_layout_test.cpp b/tests/midi_controller_layout_test.cpp
+new file mode 100644
+index 0000000..3097617
+--- /dev/null
++++ b/tests/midi_controller_layout_test.cpp
+@@ -0,0 +1,77 @@
++// Visual MIDI mapper layouts: the shipped MP3 e2 layout loads and matches the
++// controller's MIDI map, and malformed files are refused with a reason.
++
++#include "core/MidiControllerLayout.h"
++
++#include <QSet>
++
++#include <iostream>
++
++using namespace AetherSDR;
++
++namespace {
++
++bool expect(bool condition, const char* label)
++{
++    std::cout << (condition ? "[ OK ] " : "[FAIL] ") << label << '\n';
++    return condition;
++}
++
++QByteArray minimalLayout(const QByteArray& controls)
++{
++    return QByteArray(R"({"format":"aethersdr-midi-layout","version":1,"id":"t","name":"T",)"
++                      R"("width":100,"height":100,"controls":)") + controls + "}";
++}
++
++} // namespace
++
++int main()
++{
++    bool ok = true;
++
++    // ── Shipped MP3 e2 layout ───────────────────────────────────────────
++    const MidiLayoutLoadResult mp3 = loadMidiControllerLayout(QStringLiteral(AETHER_MP3E2_LAYOUT));
++    ok &= expect(mp3.ok(), "MP3 e2 layout loads");
++    if (!mp3.ok()) std::cout << "       " << mp3.error.toStdString() << '\n';
++    const MidiControllerLayout& L = mp3.layout;
++    ok &= expect(L.controls.size() == 55, "MP3 e2 layout has 55 controls");
++    ok &= expect(L.banks.size() == 2 && L.bankSwitches.size() == 2, "two key banks, two Loops/Fx switches");
++
++    // Spot-check the MIDI map (Mixxx MP3 e2 mapping, channel 1).
++    using M = MidiLayoutControl::Message;
++    const auto* jogA = L.findBySource(M::ControlChange, 0x30);
++    ok &= expect(jogA && jogA->kind == MidiLayoutControl::Kind::Encoder, "CC 0x30 is the Deck A jog wheel, an encoder");
++    const auto* xfade = L.findBySource(M::ControlChange, 0x38);
++    ok &= expect(xfade && xfade->kind == MidiLayoutControl::Kind::Absolute, "CC 0x38 is the crossfader");
++    const auto* playB = L.findBySource(M::Note, 0x23);
++    ok &= expect(playB && playB->id == QLatin1String("b.play"), "note 0x23 is Deck B Play");
++    const auto* key5 = L.findBySource(M::Note, 0x05);
++    ok &= expect(key5 && key5->bank == QLatin1String("fx"), "note 0x05 is a key in the Fx bank");
++
++    // Hit testing: the centre of each visible control selects that control.
++    int hits = 0;
++    for (const auto& c : L.controls)
++        if (c.contains(c.center)) ++hits;
++    ok &= expect(hits == L.controls.size(), "every control contains its own centre");
++
++    // ── Refusals ────────────────────────────────────────────────────────
++    const QByteArray key = R"({"id":"k","kind":"button","message":"note","number":1,"shape":"key","x":10,"y":10,"w":5,"h":5})";
++    ok &= expect(parseMidiControllerLayout(minimalLayout("[" + key + "]")).ok(), "minimal layout accepted");
++    ok &= expect(!parseMidiControllerLayout("not json").ok(), "garbage refused");
++    ok &= expect(!parseMidiControllerLayout(minimalLayout("[]")).ok(), "layout without controls refused");
++    ok &= expect(!parseMidiControllerLayout(minimalLayout("[" + key + "," + key + "]")).ok(),
++                 "duplicate id refused");
++    QByteArray badNumber = key;
++    badNumber.replace("\"number\":1", "\"number\":128");
++    ok &= expect(!parseMidiControllerLayout(minimalLayout("[" + badNumber + "]")).ok(), "number 128 refused");
++    QByteArray noteKnob = R"({"id":"n","kind":"absolute","message":"note","number":2,"shape":"knob","x":10,"y":10,"r":5})";
++    ok &= expect(!parseMidiControllerLayout(minimalLayout("[" + noteKnob + "]")).ok(), "a knob sending notes refused");
++    QByteArray outside = key;
++    outside.replace("\"x\":10", "\"x\":500");
++    ok &= expect(!parseMidiControllerLayout(minimalLayout("[" + outside + "]")).ok(), "control outside the layout refused");
++    QByteArray badBank = key;
++    badBank.replace("\"shape\"", "\"bank\":\"nope\",\"shape\"");
++    ok &= expect(!parseMidiControllerLayout(minimalLayout("[" + badBank + "]")).ok(), "unknown bank refused");
++
++    return ok ? 0 : 1;
++}
+diff --git a/tests/tests.cmake b/tests/tests.cmake
+index 2b06e72..ed69596 100644
+--- a/tests/tests.cmake
++++ b/tests/tests.cmake
+@@ -8747,6 +8747,16 @@ target_include_directories(midi_settings_test PRIVATE src)
+ target_link_libraries(midi_settings_test PRIVATE Qt6::Core)
+ add_test(NAME midi_settings_test COMMAND midi_settings_test)
+ 
++add_executable(midi_controller_layout_test
++    tests/midi_controller_layout_test.cpp
++    src/core/MidiControllerLayout.cpp
++)
++target_include_directories(midi_controller_layout_test PRIVATE src)
++target_compile_definitions(midi_controller_layout_test PRIVATE
++    AETHER_MP3E2_LAYOUT="${CMAKE_SOURCE_DIR}/resources/midi-layouts/hercules-djcontrol-mp3-e2.json")
++target_link_libraries(midi_controller_layout_test PRIVATE Qt6::Core)
++add_test(NAME midi_controller_layout_test COMMAND midi_controller_layout_test)
++
+ add_executable(midi_relative_cc_decoder_test
+     tests/midi_relative_cc_decoder_test.cpp
+ )
+-- 
+2.43.0
+

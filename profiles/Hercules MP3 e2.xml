@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MidiProfile version="1">
+    <Binding param="rx.tuneKnob" channel="-1" type="0" number="48" inverted="False" relative="True"/>
+    <Binding param="rx.afGain" channel="-1" type="0" number="52" inverted="False"/>
+    <Binding param="rx.squelch" channel="-1" type="0" number="53" inverted="False"/>
+    <Binding param="rx.agcThreshold" channel="-1" type="0" number="54" inverted="False"/>
+    <Binding param="rx.audioPan" channel="-1" type="0" number="55" inverted="False"/>
+    <Binding param="global.modeDown" channel="-1" type="1" number="1" inverted="False"/>
+    <Binding param="global.modeUp" channel="-1" type="1" number="2" inverted="False"/>
+    <Binding param="rx.squelchEnable" channel="-1" type="1" number="3" inverted="False"/>
+    <Binding param="global.tnfEnable" channel="-1" type="1" number="4" inverted="False"/>
+    <Binding param="rx.nr2Enable" channel="-1" type="1" number="5" inverted="False"/>
+    <Binding param="rx.rn2Enable" channel="-1" type="1" number="6" inverted="False"/>
+    <Binding param="global.bandZoom" channel="-1" type="1" number="7" inverted="False"/>
+    <Binding param="global.segmentZoom" channel="-1" type="1" number="8" inverted="False"/>
+    <Binding param="global.filterNarrow" channel="-1" type="1" number="10" inverted="False"/>
+    <Binding param="global.filterWiden" channel="-1" type="1" number="11" inverted="False"/>
+    <Binding param="rx.stepDown" channel="-1" type="1" number="12" inverted="False"/>
+    <Binding param="rx.stepUp" channel="-1" type="1" number="13" inverted="False"/>
+    <Binding param="global.modeLSB" channel="-1" type="1" number="14" inverted="False"/>
+    <Binding param="global.modeUSB" channel="-1" type="1" number="15" inverted="False"/>
+    <Binding param="rx.mute" channel="-1" type="1" number="16" inverted="False"/>
+    <Binding param="global.prevSlice" channel="-1" type="1" number="17" inverted="False"/>
+    <Binding param="rx.nrEnable" channel="-1" type="1" number="18" inverted="False"/>
+    <Binding param="rx.nbEnable" channel="-1" type="1" number="19" inverted="False"/>
+    <Binding param="tx.rfPower" channel="-1" type="0" number="57" inverted="False"/>
+    <Binding param="phone.micLevel" channel="-1" type="0" number="58" inverted="False"/>
+    <Binding param="phone.monGain" channel="-1" type="0" number="59" inverted="False"/>
+    <Binding param="cw.speed" channel="-1" type="0" number="60" inverted="False"/>
+    <Binding param="global.modeCW" channel="-1" type="1" number="21" inverted="False"/>
+    <Binding param="global.modeAM" channel="-1" type="1" number="22" inverted="False"/>
+    <Binding param="global.modeFM" channel="-1" type="1" number="23" inverted="False"/>
+    <Binding param="global.modeDIGU" channel="-1" type="1" number="24" inverted="False"/>
+    <Binding param="rx.anfEnable" channel="-1" type="1" number="25" inverted="False"/>
+    <Binding param="rx.ritEnable" channel="-1" type="1" number="26" inverted="False"/>
+    <Binding param="rx.xitEnable" channel="-1" type="1" number="27" inverted="False"/>
+    <Binding param="global.splitToggle" channel="-1" type="1" number="28" inverted="False"/>
+    <Binding param="global.panZoomOut" channel="-1" type="1" number="30" inverted="False"/>
+    <Binding param="global.panZoomIn" channel="-1" type="1" number="31" inverted="False"/>
+    <Binding param="global.tuneDown1mhz" channel="-1" type="1" number="32" inverted="False"/>
+    <Binding param="global.tuneUp1mhz" channel="-1" type="1" number="33" inverted="False"/>
+    <Binding param="tx.tune" channel="-1" type="1" number="34" inverted="False"/>
+    <Binding param="tx.mox" channel="-1" type="1" number="35" inverted="False"/>
+    <Binding param="phone.monEnable" channel="-1" type="1" number="36" inverted="False"/>
+    <Binding param="global.nextSlice" channel="-1" type="1" number="37" inverted="False"/>
+    <Binding param="phone.procEnable" channel="-1" type="1" number="38" inverted="False"/>
+    <Binding param="tx.atuStart" channel="-1" type="1" number="39" inverted="False"/>
+    <Binding param="global.bandUp" channel="-1" type="1" number="41" inverted="False"/>
+    <Binding param="global.bandDown" channel="-1" type="1" number="42" inverted="False"/>
+    <Binding param="global.nrCycle" channel="-1" type="1" number="44" inverted="False"/>
+    <Binding param="global.agcCycle" channel="-1" type="1" number="43" inverted="False"/>
+    <Binding param="rx.tuneLock" channel="-1" type="1" number="45" inverted="False"/>
+    <Binding param="phone.voxEnable" channel="-1" type="1" number="46" inverted="False"/>
+    <Binding param="global.masterVolume" channel="-1" type="0" number="56" inverted="False"/>
+</MidiProfile>

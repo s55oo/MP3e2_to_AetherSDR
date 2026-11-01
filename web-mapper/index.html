@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MP3 e2 AetherSDR Mapper</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+html, body { margin: 0; } body { font-size: 14px; }
+/* Layout: controller schematic on the left, function picker on the right; assignments table and profile export below. */
+:root {
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --ink: #1b2228;
+  --muted: #5d6871;
+  --line: #cfd5da;
+  --chassis: #2a3138;
+  --chassis-ink: #c9d1d8;
+  --ctl: #47525c;
+  --ctl-empty: #39424a;
+  --accent: #e8962e;      /* amber dial-lamp */
+  --accent-ink: #3a2306;
+  --sel: #4fc3e8;
+  --warn: #b5482f;
+  --ok: #2f7d4f;
+  --f-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161a; --panel: #1b2126; --ink: #e3e8ec; --muted: #8e9aa4; --line: #2e363d;
+  --chassis: #0b0e11; --chassis-ink: #9aa7b1; --ctl: #3d4851; --ctl-empty: #262e35;
+  --accent: #f0a443; --accent-ink: #2b1a04; --sel: #5fcdf0; --warn: #e07a60; --ok: #5cbf86;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #12161a; --panel: #1b2126; --ink: #e3e8ec; --muted: #8e9aa4; --line: #2e363d;
+  --chassis: #0b0e11; --chassis-ink: #9aa7b1; --ctl: #3d4851; --ctl-empty: #262e35;
+  --accent: #f0a443; --accent-ink: #2b1a04; --sel: #5fcdf0; --warn: #e07a60; --ok: #5cbf86;
+  color-scheme: dark; }
+
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 20px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--f-display); font-weight: 600; font-size: 1.6rem; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+h1 small { display: block; font-family: var(--f-body); font-weight: 400; font-size: .9rem; color: var(--muted); letter-spacing: 0; }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 1.05rem; margin: 0; letter-spacing: .02em; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button, select, input[type=text], input[type=search], textarea { font: inherit; color: var(--ink); }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .ctl:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+select, input[type=text], input[type=search], textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+.board { background: var(--chassis); border-radius: 14px; padding: 12px; }
+.board svg { display: block; width: 100%; height: auto; }
+.bankbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; color: var(--chassis-ink); font-size: .82rem; padding: 4px 6px 10px; }
+.seg { display: inline-flex; border: 1px solid #56616b; border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--chassis-ink); padding: 5px 10px; font-size: .82rem; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+.ctl { cursor: pointer; }
+.ctl .body { fill: var(--ctl-empty); stroke: #66727c; stroke-width: 1.2; transition: fill .12s; }
+.ctl.set .body { fill: var(--accent); stroke: var(--accent); }
+.ctl:hover .body { stroke: var(--sel); }
+.ctl.sel .body { stroke: var(--sel); stroke-width: 3.5; }
+.ctl text { font-family: var(--f-body); font-size: 16px; fill: var(--chassis-ink); pointer-events: none; }
+.ctl text.in { font-family: var(--f-display); font-weight: 600; font-size: 17px; letter-spacing: .04em; }
+.ctl text.in.small { font-size: 11px; fill: #7f8b95; }
+.ctl.set text.in:not(.small) { fill: var(--accent-ink); }
+.ctl text.cap { font-family: var(--f-display); font-size: 14px; fill: #7f8b95; letter-spacing: .06em; }
+.ctl text.lab { font-size: 18px; font-weight: 600; fill: #6c7882; }
+.ctl.set text.lab { fill: var(--accent); }
+.ctl.sel text.lab { fill: var(--sel); }
+.ctl text.lab.muted { font-size: 14px; font-weight: 400; fill: #6c7882; }
+[hidden] { display: none !important; }
+.deco { fill: none; stroke: #4a555e; }
+.pbtn, button.dark { background: transparent; color: var(--chassis-ink); border: 1px solid #56616b; border-radius: 6px; padding: 5px 10px; font-size: .82rem; cursor: pointer; }
+.pbtn:hover, button.dark:hover { border-color: var(--chassis-ink); }
+button.dark[aria-pressed="true"] { background: var(--sel); color: #06222c; border-color: var(--sel); font-weight: 600; }
+.photobar { gap: 8px; } .photobar input[type=range] { width: 90px; accent-color: var(--accent); }
+svg.photo .static { display: none; }
+svg.photo .ctl .body { fill-opacity: .35; stroke: #ffffff; stroke-opacity: .85; }
+svg.photo .ctl.set .body { fill: var(--accent); fill-opacity: .45; stroke: var(--accent); stroke-opacity: 1; }
+svg.photo .ctl.sel .body { stroke: var(--sel); }
+svg.photo .ctl .deco2 { display: none; }
+svg.photo .ctl text { paint-order: stroke; stroke: rgba(0,0,0,.78); stroke-width: 3.5px; stroke-linejoin: round; fill: #f2f4f6; }
+svg.photo .ctl.set text.lab { fill: #ffc56e; }
+svg.photo .ctl.sel text.lab { fill: var(--sel); }
+svg.moving .ctl { cursor: grab; } svg.moving .ctl:active { cursor: grabbing; }
+.deckname.big { font-size: 44px; fill: #59646d; }
+.deckname { font-family: var(--f-display); font-size: 15px; fill: #7f8b95; letter-spacing: .12em; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
+.sticky { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 900px) { .sticky { position: static; } }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: .86rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--f-mono); font-size: .82rem; }
+.current { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--panel)); }
+.current.none { background: transparent; border-style: dashed; border-color: var(--line); color: var(--muted); }
+.current b { display: block; }
+.current code { font-family: var(--f-mono); font-size: .78rem; color: var(--muted); }
+.flist { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.flist .cat { position: sticky; top: 0; background: var(--panel); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 6px 10px 4px; border-bottom: 1px solid var(--line); }
+.flist button { display: flex; width: 100%; justify-content: space-between; gap: 8px; border: 0; border-radius: 0; text-align: left; padding: 6px 10px; background: transparent; }
+.flist button:hover { background: color-mix(in srgb, var(--sel) 12%, var(--panel)); }
+.flist button.on { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); font-weight: 600; }
+.flist .used { font-size: .74rem; color: var(--muted); white-space: nowrap; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.note { font-size: .82rem; color: var(--muted); margin: 0; }
+.note.warn { color: var(--warn); }
+.toast { font-size: .82rem; color: var(--ok); min-height: 1.2em; margin: 0; }
+
+.lower { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.mono { font-family: var(--f-mono); font-size: .78rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+tr.grp td { font-family: var(--f-display); font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--line) 35%, var(--panel)); }
+tbody tr[data-id] { cursor: pointer; }
+tbody tr[data-id]:hover td { background: color-mix(in srgb, var(--sel) 8%, var(--panel)); }
+tbody tr.sel td { background: color-mix(in srgb, var(--sel) 16%, var(--panel)); }
+td.empty { color: var(--muted); font-style: italic; }
+textarea { width: 100%; box-sizing: border-box; min-height: 150px; font-family: var(--f-mono); font-size: .76rem; line-height: 1.4; resize: vertical; }
+ol.steps { margin: 0; padding-left: 1.2em; font-size: .86rem; display: grid; gap: 4px; }
+code.path { font-family: var(--f-mono); font-size: .8rem; background: color-mix(in srgb, var(--line) 40%, var(--panel)); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+label.chk { display: inline-flex; gap: 6px; align-items: center; font-size: .86rem; }
+@media (prefers-reduced-motion: reduce) { .ctl .body { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>MP3 e2 → AetherSDR <small>Click a control, pick what it does on your FLEX-6400, then copy the profile. Load a photo of your own controller to see your layout on it.</small></h1>
+    <div class="toolbar">
+      <button id="btnPreset" type="button">Load ham starter layout</button>
+      <button id="btnClear" type="button">Clear all</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="board">
+      <div class="bankbar">
+        <div class="row" style="gap:8px">
+          <span>Number keys show:</span>
+          <div class="seg" role="group" aria-label="Key bank">
+            <button type="button" id="bankLoop" aria-pressed="true">Loop bank (Fx off)</button>
+            <button type="button" id="bankFx" aria-pressed="false">Fx bank (Fx lit)</button>
+          </div>
+        </div>
+        <div class="row photobar">
+          <label class="pbtn" for="photoIn">Use my photo…</label>
+          <input type="file" id="photoIn" accept="image/*" hidden>
+          <span id="photoTools" class="row" hidden>
+            <label for="photoOp">Photo</label><input type="range" id="photoOp" min="0.2" max="1" step="0.05" value="0.85">
+            <button type="button" id="btnMove" class="dark" aria-pressed="false">Move labels</button>
+            <button type="button" id="btnResetPos" class="dark">Reset positions</button>
+            <button type="button" id="btnPhotoOff" class="dark">Remove photo</button>
+          </span>
+        </div>
+        <div class="legend">
+          <span><i class="sw" style="background:var(--accent)"></i>assigned</span>
+          <span><i class="sw" style="background:var(--ctl-empty);border:1px solid #66727c"></i>free</span>
+          <span><i class="sw" style="border:2px solid var(--sel)"></i>selected</span>
+        </div>
+      </div>
+      <svg id="svg" viewBox="0 0 1300 900" role="group" aria-label="Controller layout"></svg>
+    </div>
+
+    <aside class="panel sticky" aria-live="polite">
+      <div>
+        <h2 id="selName">Pick a control</h2>
+        <p class="note" id="selKind">Click any knob, fader, wheel or button on the controller.</p>
+      </div>
+      <dl class="kv" id="selKv" hidden>
+        <dt>MIDI</dt><dd id="kvMsg"></dd>
+        <dt>Sends</dt><dd id="kvSends"></dd>
+      </dl>
+      <div class="current none" id="selCurrent">Nothing assigned</div>
+      <div class="row" id="selOpts" hidden>
+        <label class="chk"><input type="checkbox" id="chkInvert"> Reverse direction</label>
+        <button type="button" id="btnUnassign">Unassign</button>
+      </div>
+      <p class="note warn" id="selWarn" hidden></p>
+      <input type="search" id="search" placeholder="Search functions (e.g. band 20, NR, MOX)" aria-label="Search functions" hidden>
+      <div class="flist" id="flist" hidden></div>
+      <p class="toast" id="toast"></p>
+      <p class="note" id="moveHint" hidden>Move mode: drag each marker onto its control in your photo. Click <b>Move labels</b> again when done.</p>
+    </aside>
+  </div>
+
+  <div class="lower">
+    <section class="panel">
+      <div class="row" style="justify-content:space-between">
+        <h2>Assignments</h2>
+        <span class="note" id="count"></span>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Control</th><th>MIDI</th><th>AetherSDR function</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Profile for AetherSDR</h2>
+      <div class="row">
+        <label for="chan" class="note" style="color:var(--ink)">MIDI channel</label>
+        <select id="chan">
+          <option value="-1">Any channel (safest)</option>
+          <option value="0">Channel 1 (factory default)</option>
+          <option value="1">Channel 2</option><option value="2">Channel 3</option><option value="3">Channel 4</option>
+        </select>
+      </div>
+      <textarea id="xmlOut" readonly aria-label="Profile XML" spellcheck="false"></textarea>
+      <div class="row">
+        <button type="button" class="primary" id="btnCopy">Copy profile XML</button>
+        <span class="toast" id="copyMsg"></span>
+      </div>
+      <ol class="steps">
+        <li>Paste into a plain text file named <code class="path">Hercules MP3 e2.xml</code>.</li>
+        <li>In AetherSDR open the MIDI mapping dialog, click <b>Import…</b> and choose that file.</li>
+        <li>Or drop it straight into the profile folder: <code class="path">~/.config/AetherSDR/midi/</code> (Linux), <code class="path">~/Library/Preferences/AetherSDR/midi/</code> (macOS) or <code class="path">%LOCALAPPDATA%\AetherSDR\midi\</code> (Windows), then <b>Load</b> it.</li>
+      </ol>
+      <details>
+        <summary class="note" style="cursor:pointer">Edit an existing profile</summary>
+        <div style="display:grid;gap:8px;margin-top:8px">
+          <p class="note">Paste a profile exported from AetherSDR, or open the file, to see and change it here.</p>
+          <textarea id="xmlIn" aria-label="Paste profile XML" spellcheck="false" placeholder="&lt;MidiProfile version=&quot;1&quot;&gt;…"></textarea>
+          <div class="row">
+            <button type="button" id="btnImport">Load pasted XML</button>
+            <input type="file" id="fileIn" accept=".xml,text/xml" aria-label="Open profile file">
+          </div>
+          <p class="note" id="importMsg"></p>
+        </div>
+      </details>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const $ = id => document.getElementById(id);
+const hex = n => "0x" + n.toString(16).toUpperCase().padStart(2, "0");
+
+/* ---------- AetherSDR functions (from AetherSDR's MIDI action registry) ---------- */
+const F = [];
+const f = (id, name, cat, type) => F.push({ id, name, cat, type });
+[["rx.afGain","AF Gain"],["rx.squelch","Squelch Level"],["rx.agcThreshold","AGC Threshold"],["rx.audioPan","Audio Pan"]].forEach(([i,n])=>f(i,n,"Receive","Slider"));
+f("rx.tuneKnob","VFO Tune Knob","Receive","Encoder");
+[["rx.nbEnable","Noise Blanker"],["rx.nrEnable","Noise Reduction"],["rx.nr2Enable","NR2 (Spectral)"],["rx.rn2Enable","RN2 (RNNoise)"],["rx.nr4Enable","NR4 (Spectral Bleach)"],["rx.dfnrEnable","DFNR (DeepFilter)"],["rx.anfEnable","Auto Notch"],["rx.adaptiveFilter","Adaptive RX Filter"],["rx.squelchEnable","Squelch On/Off"],["rx.mute","Audio Mute"],["rx.tuneLock","Tune Lock"],["rx.centerLock","Center Lock"],["rx.ritEnable","RIT On/Off"],["rx.xitEnable","XIT On/Off"]].forEach(([i,n])=>f(i,n,"Receive","Toggle"));
+[["rx.stepUp","Tune Step Up"],["rx.stepDown","Tune Step Down"],["global.nrCycle","NR Cycle"],["global.agcCycle","AGC Cycle"]].forEach(([i,n])=>f(i,n,"Receive","Trigger"));
+[["global.filterWiden","Filter Widen"],["global.filterNarrow","Filter Narrow"]].forEach(([i,n])=>f(i,n,"Filter","Trigger"));
+[["global.tuneUp1mhz","Tune Up 1 MHz"],["global.tuneDown1mhz","Tune Down 1 MHz"],["global.splitToggle","Split"],["global.nextSlice","Next Slice"],["global.prevSlice","Previous Slice"]].forEach(([i,n])=>f(i,n,"Frequency & slices","Trigger"));
+[["global.bandUp","Band Up"],["global.bandDown","Band Down"]].forEach(([i,n])=>f(i,n,"Band","Trigger"));
+["160","80","60","40","30","20","17","15","12","10","6","2"].forEach(b=>f(`global.band${b}m`,`Band ${b} m`,"Band","Trigger"));
+[["global.modeUp","Mode Up"],["global.modeDown","Mode Down"]].forEach(([i,n])=>f(i,n,"Mode","Trigger"));
+["USB","LSB","CW","CWL","AM","SAM","FM","NFM","DFM","DIGU","DIGL","RTTY","DSTR","FDVU","FDVL"].forEach(m=>f(`global.mode${m}`,`Mode ${m}`,"Mode","Trigger"));
+[["tx.rfPower","RF Power"],["tx.tunePower","Tune Power"]].forEach(([i,n])=>f(i,n,"Transmit","Slider"));
+[["tx.mox","MOX"],["tx.tune","TUNE"],["global.txButton","TX Button"]].forEach(([i,n])=>f(i,n,"Transmit","Toggle"));
+[["tx.atuStart","ATU Start"],["global.twoToneTune","Two-Tone Tune"]].forEach(([i,n])=>f(i,n,"Transmit","Trigger"));
+f("cw.ptt","PTT (hold to talk)","Transmit","Gate");
+[["phone.micLevel","Mic Level"],["phone.monGain","Monitor Volume"],["phone.voxLevel","VOX Level"],["phone.amCarrier","AM Carrier"]].forEach(([i,n])=>f(i,n,"Phone","Slider"));
+[["phone.procEnable","Speech Processor"],["phone.daxEnable","DAX"],["phone.monEnable","Monitor"],["phone.voxEnable","VOX"]].forEach(([i,n])=>f(i,n,"Phone","Toggle"));
+[["cw.speed","CW Speed (WPM)"],["cw.delayMs","CW Break-In Delay"]].forEach(([i,n])=>f(i,n,"CW","Slider"));
+[["cw.sidetoneEnable","CW Sidetone"],["cw.iambicEnable","Iambic"],["cw.iambicMode","Iambic Mode A/B"],["cw.swapPaddles","Swap Paddles"],["cw.cwlEnable","CWL Offset"],["cw.breakInEnable","Break-In (QSK)"]].forEach(([i,n])=>f(i,n,"CW","Toggle"));
+[["cwkey","Straight Key"],["cwdit","Paddle Dit"],["cwdah","Paddle Dah"]].forEach(([i,n])=>f(i,n,"CW","Gate"));
+[["global.masterVolume","Master Volume"],["global.hpVolume","Headphone Volume"]].forEach(([i,n])=>f(i,n,"Audio & display","Slider"));
+[["global.masterMute","Master Mute"],["global.tnfEnable","TNF On/Off"],["global.rade","RADE Modem"],["global.qsoRecord","QSO Record"],["global.qsoPlay","QSO Playback"]].forEach(([i,n])=>f(i,n,"Audio & display","Toggle"));
+[["global.bandZoom","Band Zoom"],["global.segmentZoom","Segment Zoom"],["global.panZoomIn","Pan Zoom In"],["global.panZoomOut","Pan Zoom Out"],["global.openMemories","Open Memories"]].forEach(([i,n])=>f(i,n,"Audio & display","Trigger"));
+[["eq.txEnable","TX EQ On/Off"],["eq.rxEnable","RX EQ On/Off"]].forEach(([i,n])=>f(i,n,"Equalizer","Toggle"));
+[63,125,250,500,1000,2000,4000,8000].forEach(h=>f(`eq.band${h}`,`EQ ${h>=1000?h/1000+" kHz":h+" Hz"}`,"Equalizer","Slider"));
+const FBY = Object.fromEntries(F.map(x => [x.id, x]));
+const TYPE_LABEL = { Slider: "level", Toggle: "on/off", Trigger: "press", Gate: "hold", Encoder: "tune" };
+// which function types each control kind can drive
+const ACCEPTS = { button: ["Toggle","Trigger","Gate"], abs: ["Slider"], enc: ["Encoder"] };
+
+/* ---------- Controller controls (MIDI from the Mixxx MP3 e2 mapping) ---------- */
+const C = [];
+const add = o => { C.push(o); return o; };
+let BANK = "loop";
+const W = 1300, H = 900;
+// Positions follow the real MP3 e2 layout (top view, 650×450 photo scaled ×2).
+function deck(d) {
+  const A = d === "A", off = A ? 0 : 0x14, g = `Deck ${d}`;
+  const P = A ? { mt:[140,96], pitch:[140,184], pbm:[90,274], pbp:[190,274], sync:[140,352], keys:[[300,176],[392,176],[300,252],[392,252]], rew:[300,350], ffw:[392,350], jog:[270,580], cue:[120,808], play:[240,808] }
+              : { mt:[1154,96], pitch:[1154,184], pbm:[1104,274], pbp:[1200,274], sync:[1154,352], keys:[[920,176],[1012,176],[920,252],[1012,252]], rew:[920,350], ffw:[1012,350], jog:[1030,580], cue:[1050,808], play:[1176,808] };
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = P.keys[i];
+    add({ id:`${d}k${i+1}`, name:`Deck ${d} key ${i+1} (Loop bank)`, group:g, kind:"button", msg:"note", num:0x01+off+i, shape:"key", x, y, w:64, h:40, label:String(i+1), bank:"loop", max:9 });
+    add({ id:`${d}k${i+5}`, name:`Deck ${d} key ${i+5} (Fx bank)`, group:g, kind:"button", msg:"note", num:0x05+off+i, shape:"key", x, y, w:64, h:40, label:String(i+5), bank:"fx", max:9 });
+  }
+  const btn = (k, n, num, label, xy, w, h, max) => add({ id:d+k, name:`Deck ${d} ${n}`, group:g, kind:"button", msg:"note", num:num+off, shape:"pill", x:xy[0], y:xy[1], w, h, label, max });
+  btn("mt", "Master Tempo", 0x13, "M.TEMPO", P.mt, 88, 34, 12);
+  add({ id:d+"pitch", name:`Deck ${d} Pitch knob`, group:g, kind:"enc", msg:"cc", num:A?0x32:0x33, shape:"knob", x:P.pitch[0], y:P.pitch[1], r:30, max:12 });
+  btn("pbm", "Pitch bend −", 0x0A, "−", P.pbm, 60, 36, 8);
+  btn("pbp", "Pitch bend +", 0x0B, "+", P.pbp, 60, 36, 8);
+  btn("sync", "Sync", 0x12, "SYNC", P.sync, 80, 34, 12);
+  btn("rew", "Rewind", 0x0C, "◀◀", P.rew, 64, 36, 9);
+  btn("ffw", "Fast forward", 0x0D, "▶▶", P.ffw, 64, 36, 9);
+  add({ id:d+"jog", name:`Deck ${d} Jog wheel`, group:g, kind:"enc", msg:"cc", num:A?0x30:0x31, shape:"jog", x:P.jog[0], y:P.jog[1], r:165, max:18 });
+  btn("cue", "Cue", 0x0E, "CUE", P.cue, 80, 40, 11);
+  btn("play", "Play", 0x0F, "▶‖", P.play, 80, 40, 11);
+  // mixer half belonging to this deck
+  const ex = A ? 500 : 796;
+  const cc = A ? [0x35,0x36,0x37,0x34] : [0x3A,0x3B,0x3C,0x39];
+  [["hi","Treble knob","TREBLE"],["mid","Medium knob","MEDIUM"],["low","Bass knob","BASS"]].forEach(([k,n,l],i) =>
+    add({ id:d+k, name:`Deck ${d} ${n}`, group:"Mixer", kind:"abs", msg:"cc", num:cc[i], shape:"knob", x:ex, y:96+i*112, r:28, cap:l, max:9 }));
+  add({ id:d+"hp", name:`Listen ${d} (headphone)`, group:"Mixer", kind:"button", msg:"note", num:0x10+off, shape:"pill", x:ex, y:420, w:60, h:34, label:"🎧", max:9 });
+  add({ id:d+"load", name:`Load ${d}`, group:"Mixer", kind:"button", msg:"note", num:0x11+off, shape:"pill", x:A?596:704, y:410, w:84, h:34, label:"LOAD "+d, max:9 });
+  add({ id:d+"vol", name:`Deck ${d} Volume fader`, group:"Mixer", kind:"abs", msg:"cc", num:cc[3], shape:"fader", x:A?512:788, y:490, len:180, max:10 });
+}
+deck("A");
+[["scratch","Scratch",0x2D,"SCRATCH",596,96],["automix","Automix",0x2E,"AUTOMIX",704,96],["up","Up arrow",0x29,"▲",650,184],
+ ["folder","Folder",0x2C,"FOLDER",584,256],["files","Files",0x2B,"FILES",716,256],["down","Down arrow",0x2A,"▼",650,332]]
+  .forEach(([k,n,num,l,x,y]) => add({ id:"c"+k, name:n, group:"Mixer", kind:"button", msg:"note", num, shape:"pill", x, y, w:84, h:34, label:l, max:10 }));
+add({ id:"cxf", name:"Crossfader", group:"Mixer", kind:"abs", msg:"cc", num:0x38, shape:"xfader", x:650, y:812, len:220, max:12 });
+deck("B");
+const CBY = Object.fromEntries(C.map(c => [c.id, c]));
+const keyOf = (msg, num) => (msg === "cc" ? "c" : "n") + num;
+const CBYMIDI = Object.fromEntries(C.map(c => [keyOf(c.msg, c.num), c]));
+
+/* ---------- State ---------- */
+// map: controlId -> { p: paramId, inv: bool }
+let map = {};
+let sel = null;
+let chan = -1;
+const STORE = "mp3e2-aethersdr-v2";
+function save() { try { localStorage.setItem(STORE, JSON.stringify({ map, chan, BANK })); } catch (e) {} }
+function load() { try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && s.map) { map = s.map; chan = s.chan ?? -1; BANK = s.BANK || "loop"; return true; } } catch (e) {} return false; }
+
+const PRESET = {
+  // Deck A: receive
+  Ajog:"rx.tuneKnob", Avol:"rx.afGain", Ahi:"rx.squelch", Amid:"rx.agcThreshold", Alow:"rx.audioPan",
+  Ak1:"global.modeDown", Ak2:"global.modeUp", Ak3:"rx.squelchEnable", Ak4:"global.tnfEnable",
+  Ak5:"rx.nr2Enable", Ak6:"rx.rn2Enable", Ak7:"global.bandZoom", Ak8:"global.segmentZoom",
+  Apbm:"global.filterNarrow", Apbp:"global.filterWiden", Arew:"rx.stepDown", Affw:"rx.stepUp",
+  Acue:"global.modeLSB", Aplay:"global.modeUSB", Ahp:"rx.mute", Aload:"global.prevSlice",
+  Async:"rx.nrEnable", Amt:"rx.nbEnable",
+  // Deck B: transmit and modes
+  Bvol:"tx.rfPower", Bhi:"phone.micLevel", Bmid:"phone.monGain", Blow:"cw.speed",
+  Bk1:"global.modeCW", Bk2:"global.modeAM", Bk3:"global.modeFM", Bk4:"global.modeDIGU",
+  Bk5:"rx.anfEnable", Bk6:"rx.ritEnable", Bk7:"rx.xitEnable", Bk8:"global.splitToggle",
+  Bpbm:"global.panZoomOut", Bpbp:"global.panZoomIn", Brew:"global.tuneDown1mhz", Bffw:"global.tuneUp1mhz",
+  Bcue:"tx.tune", Bplay:"tx.mox", Bhp:"phone.monEnable", Bload:"global.nextSlice",
+  Bsync:"phone.procEnable", Bmt:"tx.atuStart",
+  // centre: the arrows step through bands
+  cup:"global.bandUp", cdown:"global.bandDown", cfolder:"global.nrCycle", cfiles:"global.agcCycle",
+  cscratch:"rx.tuneLock", cautomix:"phone.voxEnable", cxf:"global.masterVolume"
+};
+function applyPreset() { map = {}; for (const [c, p] of Object.entries(PRESET)) map[c] = { p, inv:false }; }
+
+/* ---------- Drawing ---------- */
+const svg = document.getElementById("svg");
+const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const short = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+const NODES = {};
+function drawStatic() {
+  const st = el("g", { class:"static" }, svg);
+  el("rect", { x:10, y:10, width:W-20, height:H-20, rx:28, fill:"none", stroke:"#3b454e", "stroke-width":2 }, st);
+  // section outlines: pitch blocks, key blocks, centre browser block
+  [[36,52,208,346],[1056,52,208,346],[260,66,172,220],[880,66,172,220],[548,146,204,232]].forEach(([x,y,w,h]) =>
+    el("rect", { x, y, width:w, height:h, rx:12, class:"deco" }, st));
+  el("line", { x1:446, y1:30, x2:446, y2:H-30, class:"deco" }, st);
+  el("line", { x1:W-446, y1:30, x2:W-446, y2:H-30, class:"deco" }, st);
+  el("text", { x:60, y:470, class:"deckname big" }, st).textContent = "A";
+  el("text", { x:W-60, y:470, class:"deckname big", "text-anchor":"end" }, st).textContent = "B";
+  // Loops/Fx shift buttons switch which notes the number keys send (no MIDI of their own)
+  [["A",346],["B",966]].forEach(([d,x]) => {
+    const g = el("g", { class:"ctl bank", tabindex:0, role:"button", "aria-label":`Deck ${d} Loops/Fx key-bank switch` }, svg);
+    el("rect", { class:"body", x:x-50, y:82, width:100, height:32, rx:6, "stroke-dasharray":"4 3" }, g);
+    el("text", { x, y:104, "text-anchor":"middle", class:"in" }, g).textContent = "LOOPS/FX";
+    el("title", {}, g).textContent = "Loops/Fx: switches the number keys between keys 1–4 and 5–8";
+    g.addEventListener("click", () => setBank(BANK === "loop" ? "fx" : "loop"));
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBank(BANK === "loop" ? "fx" : "loop"); } });
+  });
+}
+function drawControls() {
+  for (const c of C) {
+    const g = el("g", { class:"ctl", tabindex:0, role:"button", "data-id":c.id }, svg);
+    const t = el("title", {}, g);
+    let labY, inText = null;
+    if (c.shape === "key" || c.shape === "pill") {
+      el("rect", { class:"body", x:c.x-c.w/2, y:c.y-c.h/2, width:c.w, height:c.h, rx:7 }, g);
+      inText = el("text", { class:"in", x:c.x, y:c.y+6, "text-anchor":"middle" }, g);
+      labY = c.y - c.h/2 - 10;
+    } else if (c.shape === "knob") {
+      el("circle", { class:"body", cx:c.x, cy:c.y, r:c.r }, g);
+      el("line", { x1:c.x, y1:c.y-c.r+4, x2:c.x, y2:c.y-c.r/3, stroke:"#c9d1d8", "stroke-width":2.5, "pointer-events":"none" }, g);
+      if (c.cap) el("text", { x:c.x, y:c.y+c.r+19, "text-anchor":"middle", class:"cap" }, g).textContent = c.cap;
+      labY = c.y - c.r - 10;
+    } else if (c.shape === "jog") {
+      el("circle", { class:"body", cx:c.x, cy:c.y, r:c.r }, g);
+      el("circle", { class:"deco2", cx:c.x, cy:c.y, r:c.r*0.62, fill:"none", stroke:"#66727c", "pointer-events":"none" }, g);
+      el("circle", { cx:c.x, cy:c.y, r:7, fill:"#66727c", "pointer-events":"none" }, g);
+      inText = el("text", { class:"in", x:c.x, y:c.y + c.r*0.84, "text-anchor":"middle" }, g);
+      labY = c.y - c.r - 12;
+    } else if (c.shape === "fader") {
+      el("rect", { class:"deco2", x:c.x-3, y:c.y, width:6, height:c.len, rx:3, fill:"#1c2227", "pointer-events":"none" }, g);
+      el("rect", { class:"body", x:c.x-22, y:c.y+c.len*0.45-14, width:44, height:28, rx:4 }, g);
+      el("rect", { x:c.x-20, y:c.y-6, width:40, height:c.len+12, fill:"transparent" }, g);
+      el("text", { class:"cap", x:c.x, y:c.y+c.len+24, "text-anchor":"middle" }, g).textContent = "VOLUME";
+      labY = c.y - 16;
+    } else if (c.shape === "xfader") {
+      el("rect", { class:"deco2", x:c.x-c.len/2, y:c.y-3, width:c.len, height:6, rx:3, fill:"#1c2227", "pointer-events":"none" }, g);
+      el("rect", { class:"body", x:c.x-14, y:c.y-22, width:28, height:44, rx:4 }, g);
+      el("rect", { x:c.x-c.len/2-6, y:c.y-18, width:c.len+12, height:36, fill:"transparent" }, g);
+      labY = c.y - 34;
+    }
+    const lab = el("text", { class:"lab", x:c.x, y:labY, "text-anchor":"middle" }, g);
+    NODES[c.id] = { g, t, inText, lab };
+    g.addEventListener("click", () => { if (!moving) select(c.id); });
+    g.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(c.id); } });
+    g.addEventListener("pointerdown", e => startDrag(e, c));
+  }
+}
+const SHORT = { "rx.tuneKnob":"VFO tune", "global.filterNarrow":"Filter −", "global.filterWiden":"Filter +", "rx.stepDown":"Step −", "rx.stepUp":"Step +",
+  "global.tuneDown1mhz":"−1 MHz", "global.tuneUp1mhz":"+1 MHz", "global.panZoomIn":"Zoom +", "global.panZoomOut":"Zoom −", "global.nextSlice":"Next slice",
+  "global.prevSlice":"Prev slice", "global.bandUp":"Band ▲", "global.bandDown":"Band ▼", "global.modeUp":"Mode +", "global.modeDown":"Mode −", "rx.squelchEnable":"SQL on", "global.tnfEnable":"TNF", "rx.nr2Enable":"NR2", "rx.rn2Enable":"RN2", "global.bandZoom":"Band zoom", "global.segmentZoom":"Seg zoom", "rx.agcThreshold":"AGC-T", "rx.nrEnable":"NR", "rx.nbEnable":"NB", "rx.anfEnable":"ANF", "rx.ritEnable":"RIT", "rx.xitEnable":"XIT",
+  "phone.procEnable":"PROC", "phone.monEnable":"MON", "phone.monGain":"MON vol", "phone.voxEnable":"VOX", "tx.atuStart":"ATU", "rx.mute":"Mute",
+  "global.splitToggle":"Split", "global.masterVolume":"Master vol", "global.hpVolume":"Phones vol", "rx.squelch":"Squelch", "cw.speed":"CW WPM",
+  "phone.micLevel":"Mic level", "tx.rfPower":"RF power", "rx.audioPan":"Pan", "rx.tuneLock":"Lock", "global.nrCycle":"NR cycle", "global.agcCycle":"AGC cycle" };
+// Short on-board name for a function
+function boardName(fn) {
+  if (!fn) return "—";
+  if (fn.id.startsWith("global.band") && /\d/.test(fn.id)) return fn.name.replace(/^Band /, "");
+  if (fn.id.startsWith("global.mode") && !/Up|Down/.test(fn.id)) return fn.name.replace(/^Mode /, "");
+  if (SHORT[fn.id]) return SHORT[fn.id];
+  return fn.name;
+}
+function renderBoard() {
+  for (const c of C) {
+    const n = NODES[c.id], a = map[c.id], fn = a && FBY[a.p];
+    if (c.bank && c.bank !== BANK) n.g.setAttribute("display", "none"); else n.g.removeAttribute("display");
+    const o = pos[posKey(c.id)];
+    if (o) n.g.setAttribute("transform", `translate(${o.dx} ${o.dy})`); else n.g.removeAttribute("transform");
+    n.g.classList.toggle("set", !!fn);
+    n.g.classList.toggle("sel", sel === c.id);
+    n.g.setAttribute("aria-label", `${c.name}: ${fn ? fn.name : "unassigned"}`);
+    n.t.textContent = `${c.name}\n${fn ? fn.name : "Unassigned"}${a && a.inv ? " (reversed)" : ""}`;
+    n.lab.textContent = short(boardName(fn), c.max) + (fn && a.inv ? " ↺" : "");
+    if (n.inText) n.inText.textContent = c.shape === "jog" ? "JOG" : c.label;
+  }
+}
+
+/* ---------- Your own photo + movable markers ---------- */
+let pos = {};          // controlId -> {dx, dy} (shared by the two key banks)
+let photo = null;      // data: URL of the user's photo (downscaled)
+let photoOp = 0.85;
+let moving = false;
+const posKey = id => id.replace(/^([AB])k([5-8])$/, (m, d, i) => d + "k" + (+i - 4));
+const PSTORE = "mp3e2-aethersdr-photo-v2";
+function savePhoto() { try { localStorage.setItem(PSTORE, JSON.stringify({ pos, photo, photoOp })); } catch (e) { toast("Your photo is too large to remember in this browser; it will stay until you close the page."); } }
+function loadPhoto() { try { const s = JSON.parse(localStorage.getItem(PSTORE) || "null"); if (s) { pos = s.pos || {}; photo = s.photo || null; photoOp = s.photoOp || 0.85; } } catch (e) {} }
+let photoEl = null;
+function renderPhoto() {
+  if (photo) {
+    if (!photoEl) { photoEl = el("image", { x:0, y:0, width:W, height:H, preserveAspectRatio:"xMidYMid meet" }); svg.insertBefore(photoEl, svg.firstChild); }
+    photoEl.setAttribute("href", photo);
+    photoEl.setAttribute("opacity", photoOp);
+  } else if (photoEl) { photoEl.remove(); photoEl = null; }
+  svg.classList.toggle("photo", !!photo);
+  $("photoTools").hidden = !photo;
+  $("photoOp").value = photoOp;
+}
+$("photoIn").addEventListener("change", e => {
+  const file = e.target.files[0]; if (!file) return;
+  const img = new Image(), url = URL.createObjectURL(file);
+  img.onload = () => {
+    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(img.width * scale); cv.height = Math.round(img.height * scale);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    photo = cv.toDataURL("image/jpeg", 0.82);
+    URL.revokeObjectURL(url);
+    renderPhoto(); savePhoto();
+    if (!Object.keys(pos).length) setMoving(true);
+    toast("Photo loaded. Drag each marker onto its control, then click Move labels to finish.");
+  };
+  img.onerror = () => toast("That file couldn't be opened as an image. Try a JPG or PNG.");
+  img.src = url;
+  e.target.value = "";
+});
+$("photoOp").addEventListener("input", e => { photoOp = +e.target.value; renderPhoto(); savePhoto(); });
+function setMoving(on) {
+  moving = on;
+  $("btnMove").setAttribute("aria-pressed", on);
+  svg.classList.toggle("moving", on);
+  $("moveHint").hidden = !on;
+}
+$("btnMove").addEventListener("click", () => setMoving(!moving));
+const resetBtn = $("btnResetPos");
+resetBtn.addEventListener("click", () => {
+  if (resetBtn.dataset.armed) { pos = {}; delete resetBtn.dataset.armed; resetBtn.textContent = "Reset positions"; renderBoard(); savePhoto(); toast("Markers back to the standard layout."); }
+  else { resetBtn.dataset.armed = "1"; resetBtn.textContent = "Click again to reset"; setTimeout(() => { delete resetBtn.dataset.armed; resetBtn.textContent = "Reset positions"; }, 3000); }
+});
+$("btnPhotoOff").addEventListener("click", () => { photo = null; setMoving(false); renderPhoto(); savePhoto(); toast("Photo removed. Your marker positions are kept."); });
+function svgPoint(e) { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+function startDrag(e, c) {
+  if (!moving) return;
+  e.preventDefault();
+  const k = posKey(c.id), start = svgPoint(e), o0 = pos[k] || { dx:0, dy:0 };
+  const g = NODES[c.id].g; g.setPointerCapture(e.pointerId);
+  const mv = ev => { const p = svgPoint(ev); pos[k] = { dx: Math.round(o0.dx + p.x - start.x), dy: Math.round(o0.dy + p.y - start.y) }; renderBoard(); };
+  const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); g.removeEventListener("pointercancel", up); savePhoto(); };
+  g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up); g.addEventListener("pointercancel", up);
+}
+
+function setBank(b) {
+  BANK = b;
+  document.getElementById("bankLoop").setAttribute("aria-pressed", b === "loop");
+  document.getElementById("bankFx").setAttribute("aria-pressed", b === "fx");
+  if (sel && CBY[sel].bank && CBY[sel].bank !== b) select(sel.replace(/k(\d)$/, (m, i) => "k" + (b === "fx" ? +i + 4 : +i - 4)));
+  renderBoard(); save();
+}
+
+/* ---------- Picker ---------- */
+function whoUses(p) { for (const [cid, a] of Object.entries(map)) if (a.p === p) return cid; return null; }
+function select(id) {
+  sel = id;
+  const c = CBY[id];
+  $("selName").textContent = c.name;
+  $("selKind").textContent = c.kind === "button" ? "Button: can switch something on/off, fire an action, or act as a hold-to-key."
+    : c.kind === "abs" ? "Knob or fader: sets a level from minimum to maximum."
+    : "Endless wheel: sends a step left or right each click. AetherSDR uses these for VFO tuning.";
+  $("selKv").hidden = false;
+  $("kvMsg").textContent = c.msg === "cc" ? `Control Change ${hex(c.num)} (${c.num})` : `Note ${hex(c.num)} (${c.num})`;
+  $("kvSends").textContent = c.msg === "cc" ? (c.kind === "enc" ? "1 = right, 127 = left" : "0 – 127") : "127 press · 0 release";
+  $("search").hidden = false; $("flist").hidden = false;
+  renderPicker(); renderBoard(); renderTable();
+}
+function renderPicker() {
+  const c = CBY[sel], a = map[sel], fn = a && FBY[a.p];
+  const cur = $("selCurrent");
+  cur.className = "current" + (fn ? "" : " none");
+  cur.innerHTML = fn ? `<b>${fn.name}</b><code>${fn.id} · ${TYPE_LABEL[fn.type]}</code>` : "Nothing assigned";
+  $("selOpts").hidden = !fn || !(c.kind !== "button");
+  $("chkInvert").checked = !!(a && a.inv);
+  if (fn && c.kind === "button") { $("selOpts").hidden = false; $("chkInvert").parentElement.hidden = true; } else $("chkInvert").parentElement.hidden = false;
+  const w = $("selWarn");
+  w.hidden = true;
+  if (c.kind === "enc") {
+    const other = whoUses("rx.tuneKnob");
+    w.hidden = false;
+    w.textContent = other && other !== sel
+      ? `AetherSDR allows one VFO tune control. Picking it here moves it off ${CBY[other].name}.`
+      : "AetherSDR only drives the VFO from an endless wheel, so that is the one choice here.";
+  } else if (fn && fn.id === "tx.mox") {
+    w.hidden = false; w.textContent = "MOX latches: one press transmits, the next press stops. For press-and-hold transmit choose PTT (hold to talk).";
+  }
+  const q = $("search").value.trim().toLowerCase();
+  const ok = ACCEPTS[c.kind];
+  const list = F.filter(x => ok.includes(x.type) && (!q || (x.name + " " + x.id + " " + x.cat).toLowerCase().includes(q)));
+  const box = $("flist"); box.innerHTML = "";
+  let lastCat = null;
+  if (!list.length) { const p = document.createElement("p"); p.className = "note"; p.style.padding = "10px"; p.textContent = "No matching function for this kind of control."; box.appendChild(p); }
+  for (const x of list) {
+    if (x.cat !== lastCat) { const h = document.createElement("div"); h.className = "cat"; h.textContent = x.cat; box.appendChild(h); lastCat = x.cat; }
+    const b = document.createElement("button"); b.type = "button";
+    const u = whoUses(x.id);
+    b.className = a && a.p === x.id ? "on" : "";
+    const nm = document.createElement("span"); nm.textContent = `${x.name}`;
+    const us = document.createElement("span"); us.className = "used";
+    us.textContent = u && u !== sel ? `on ${CBY[u].name.replace(/^Deck /,"")}` : TYPE_LABEL[x.type];
+    b.append(nm, us);
+    b.addEventListener("click", () => assign(x.id));
+    box.appendChild(b);
+  }
+}
+function toast(msg) { $("toast").textContent = msg; clearTimeout(toast.t); toast.t = setTimeout(() => $("toast").textContent = "", 4000); }
+function assign(p) {
+  const prev = whoUses(p);
+  if (prev && prev !== sel) { delete map[prev]; toast(`${FBY[p].name} moved here from ${CBY[prev].name}.`); }
+  else toast(`${CBY[sel].name} → ${FBY[p].name}`);
+  map[sel] = { p, inv: map[sel] && map[sel].p === p ? map[sel].inv : false };
+  refresh();
+}
+$("search").addEventListener("input", renderPicker);
+$("chkInvert").addEventListener("change", e => { if (map[sel]) { map[sel].inv = e.target.checked; refresh(); } });
+$("btnUnassign").addEventListener("click", () => { if (sel && map[sel]) { toast(`${CBY[sel].name} cleared.`); delete map[sel]; refresh(); } });
+
+/* ---------- Table ---------- */
+function renderTable() {
+  const tb = $("tbody"); tb.innerHTML = "";
+  const groups = ["Deck A", "Mixer", "Deck B"];
+  for (const gname of groups) {
+    const tr = document.createElement("tr"); tr.className = "grp";
+    const td = document.createElement("td"); td.colSpan = 3; td.textContent = gname === "Mixer" ? "Mixer and centre buttons" : gname; tr.appendChild(td); tb.appendChild(tr);
+    for (const c of C.filter(c => c.group === gname)) {
+      const a = map[c.id], fn = a && FBY[a.p];
+      const r = document.createElement("tr"); r.dataset.id = c.id; if (sel === c.id) r.className = "sel";
+      const t1 = document.createElement("td"); t1.textContent = c.name.replace(/^Deck [AB] /, "");
+      const t2 = document.createElement("td"); t2.className = "mono"; t2.textContent = (c.msg === "cc" ? "CC " : "Note ") + hex(c.num);
+      const t3 = document.createElement("td");
+      if (fn) t3.textContent = fn.name + (a.inv ? " (reversed)" : ""); else { t3.textContent = "free"; t3.className = "empty"; }
+      r.append(t1, t2, t3);
+      r.addEventListener("click", () => { if (c.bank && c.bank !== BANK) setBank(c.bank); select(c.id); });
+      tb.appendChild(r);
+    }
+  }
+  const n = Object.values(map).filter(a => FBY[a.p]).length;
+  $("count").textContent = `${n} of ${C.length} controls assigned`;
+}
+
+/* ---------- XML ---------- */
+const esc = s => s.replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+function buildXml() {
+  const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<MidiProfile version="1">'];
+  for (const c of C) {
+    const a = map[c.id]; if (!a || !FBY[a.p]) continue;
+    const type = c.msg === "cc" ? 0 : 1;
+    let s = `    <Binding param="${esc(a.p)}" channel="${chan}" type="${type}" number="${c.num}" inverted="${a.inv ? "True" : "False"}"`;
+    if (a.p === "rx.tuneKnob") s += ' relative="True"';
+    lines.push(s + "/>");
+  }
+  lines.push("</MidiProfile>");
+  return lines.join("\n") + "\n";
+}
+function importXml(text) {
+  let doc;
+  try { doc = new DOMParser().parseFromString(text, "application/xml"); } catch (e) { doc = null; }
+  if (!doc || doc.getElementsByTagName("parsererror").length) { $("importMsg").textContent = "That isn't valid XML. Paste the whole file, starting with <MidiProfile>."; return; }
+  const bs = [...doc.getElementsByTagName("Binding")];
+  if (!bs.length) { $("importMsg").textContent = "No <Binding> rows found. Is this an AetherSDR MIDI profile?"; return; }
+  const next = {}; let ok = 0; const skipped = [];
+  let seenChan = null;
+  for (const b of bs) {
+    const p = (b.getAttribute("param") || "").replace(/^cw\.key$/,"cwkey").replace(/^cw\.dit$/,"cwdit").replace(/^cw\.dah$/,"cwdah");
+    const type = +b.getAttribute("type"), num = +b.getAttribute("number");
+    const c = CBYMIDI[keyOf(type === 0 ? "cc" : "n", num)] || (type === 2 ? CBYMIDI[keyOf("n", num)] : null);
+    if (!c || !FBY[p]) { skipped.push(`${p || "?"} (${type === 0 ? "CC" : "Note"} ${num})`); continue; }
+    next[c.id] = { p, inv: b.getAttribute("inverted") === "True" }; ok++;
+    seenChan = b.getAttribute("channel");
+  }
+  map = next;
+  if (seenChan !== null && [...$("chan").options].some(o => o.value === seenChan)) { chan = +seenChan; $("chan").value = seenChan; }
+  $("importMsg").textContent = `Loaded ${ok} binding${ok === 1 ? "" : "s"}.` + (skipped.length ? ` Skipped ${skipped.length} that don't match an MP3 e2 control or a known function: ${skipped.join(", ")}.` : "");
+  refresh();
+}
+$("btnImport").addEventListener("click", () => importXml($("xmlIn").value));
+$("fileIn").addEventListener("change", e => { const file = e.target.files[0]; if (!file) return; const r = new FileReader(); r.onload = () => { $("xmlIn").value = r.result; importXml(r.result); }; r.readAsText(file); });
+$("chan").addEventListener("change", e => { chan = +e.target.value; refresh(); });
+$("btnCopy").addEventListener("click", () => {
+  const ta = $("xmlOut"), text = ta.value;
+  const done = () => { $("copyMsg").textContent = "Copied. Paste it into Hercules MP3 e2.xml"; setTimeout(() => $("copyMsg").textContent = "", 4000); };
+  const fallback = () => { ta.focus(); ta.select(); $("copyMsg").textContent = "Selected. Press Ctrl+C (⌘C on Mac) to copy."; };
+  try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+});
+
+/* ---------- Toolbar ---------- */
+$("btnPreset").addEventListener("click", () => { applyPreset(); toast("Starter layout loaded. Change anything you like."); refresh(); });
+$("btnClear").addEventListener("click", () => {
+  const b = $("btnClear");
+  if (b.dataset.armed) { map = {}; delete b.dataset.armed; b.textContent = "Clear all"; toast("All assignments cleared."); refresh(); }
+  else { b.dataset.armed = "1"; b.textContent = "Click again to clear"; setTimeout(() => { delete b.dataset.armed; b.textContent = "Clear all"; }, 3000); }
+});
+$("bankLoop").addEventListener("click", () => setBank("loop"));
+$("bankFx").addEventListener("click", () => setBank("fx"));
+
+function refresh() { renderBoard(); renderTable(); if (sel) renderPicker(); $("xmlOut").value = buildXml(); save(); }
+
+/* ---------- Boot ---------- */
+drawStatic(); drawControls();
+if (!load()) applyPreset();
+loadPhoto(); renderPhoto();
+$("chan").value = String(chan);
+setBank(BANK);
+select("Ajog");
+refresh();
+})();
+</script>
+</body>
+</html>
